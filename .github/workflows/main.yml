@@ -1,49 +1,38 @@
-name: Build and Nightly Release Maven Project
+name: Build Maven Project
 
 on:
   push:
     branches:
-      - master # Default branch
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
 
 jobs:
-  build-and-release:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout the code
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Set up JDK 17
       - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # Build the project
+      - name: Cache Maven dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
       - name: Build with Maven
-        run: mvn clean package
+        run: mvn clean install
 
-      # Create a release
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        with:
-          tag_name: nightly-${{ github.run_id }}
-          release_name: Nightly Build ${{ github.run_id }}
-          body: |
-            Automated nightly build triggered by the latest commit.
-          draft: false
-          prerelease: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Upload artifact to the release
-      - name: Upload JAR to Release
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: target/*.jar
-          asset_name: calculatorv2-nightly-${{ github.run_id }}.jar
-          asset_content_type: application/java-archive
+      - name: Run tests
+        run: mvn test

@@ -6,116 +6,129 @@ import java.util.function.DoubleUnaryOperator;
 import net.objecthunter.exp4j.Expression;
 import net.objecthunter.exp4j.ExpressionBuilder;
 import org.example.Shading.GLSLToExp4j;
-//TODO:
-//add a new shader viewer without removing the old one, the new one should use glsl
+import org.example.Shading.ShaderViewerLWJGL;
 
+public class Main {
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in); // allows users to input values in the terminal
 
-    public class Main {
-        public static void main(String[] args) {
-            Scanner scanner = new Scanner(System.in); // allows users to input values in the terminal
+        while (true) { // this is an infinite loop (its condition is always met)
+            System.out.println("\nEnter your function f(x) = ");
+            String input = scanner.nextLine().trim();
 
-            while (true) { // this is an infinite loop (its condition is always met)
-                System.out.println("\nEnter your function f(x) = ");
-                String input = scanner.nextLine().trim();
+            // exit program if input is exit
+            if (input.equalsIgnoreCase("exit")) break;
 
-                // exit program if input is exit
-                if (input.equalsIgnoreCase("exit")) break;
+            // if the user already added f(x) = in the input, remove it
+            if (input.toLowerCase().startsWith("f(x) = ")) {
+                input = input.substring(7);
+            }
 
-                // if the user already added f(x) = in the input, remove it
-                if (input.toLowerCase().startsWith("f(x) = ")) {
-                    input = input.substring(7);
-                }
+            // make simple substitutions (e.g., 5x -> 5*x)
+            input = input.replaceAll("(\\d)\\s*([a-zA-Z])", "$1*$2");
 
-                // make simple substitutions (e.g., 5x -> 5*x)
-                input = input.replaceAll("(\\d)\\s*([a-zA-Z])", "$1*$2");
+            try {
+                String finalInput = input;
+                DoubleUnaryOperator function = x -> {
+                    Expression expression = new ExpressionBuilder(finalInput)
+                            .variable("x")
+                            .build()
+                            .setVariable("x", x);
+                    return expression.evaluate();
+                };
 
-                try {
-                    String finalInput = input;
-                    DoubleUnaryOperator function = x -> {
-                        Expression expression = new ExpressionBuilder(finalInput)
-                                .variable("x")
-                                .build()
-                                .setVariable("x", x);
-                        return expression.evaluate();
-                    };
+                System.out.println("Choose an option:" +
+                        "\n 1: Check Odd/Even" +
+                        "\n 2: Solve Equation" +
+                        "\n 3: Draw Graph" +
+                        "\n 4: Shader Viewer (Java Simulation)" +
+                        "\n 5: Shader Viewer (LWJGL/OpenGL)" + // New option
+                        "\n 6: GLSLToExp4j"); // Moved option
+                String choice = scanner.nextLine().trim();
 
-                    System.out.println("Choose an option:" +
-                            "\n 1: Check Odd/Even" +
-                            "\n 2: Solve Equation" +
-                            "\n 3: Draw Graph" +
-                            "\n 4: Shader Viewer" +
-                            "\n 5: GLSLToExp4j");
-                    String choice = scanner.nextLine().trim();
+                if (choice.equals("1")) {
+                    System.out.print("Enter a value for x to test the function: ");
+                    double x = Double.parseDouble(scanner.nextLine());
+                    testFunction(function, input, x);
 
-                    if (choice.equals("1")) {
-                        System.out.print("Enter a value for x to test the function: ");
-                        double x = Double.parseDouble(scanner.nextLine());
-                        testFunction(function, input, x);
+                } else if (choice.equals("2")) {
+                    System.out.println("Choose root-finding method: 1) Newton-Raphson 2) Bisection");
+                    String method = scanner.nextLine().trim();
 
-                    } else if (choice.equals("2")) {
-                        System.out.println("Choose root-finding method: 1) Newton-Raphson 2) Bisection");
-                        String method = scanner.nextLine().trim();
+                    long startTime = System.nanoTime();
 
-                        long startTime = System.nanoTime();
-
-                        if (method.equals("1")) {
-                            List<Double> roots = findAllRootsNewton(function, -470, 470, 1.0, 1e-7, 100);
-                            long endTime = System.nanoTime();
-                            System.out.println("Roots ≈ " + roots);
-                            System.out.println("Calculation time: " + (endTime - startTime) / 1_000_000.0 + " ms");
-                        } else if (method.equals("2")) {
-                            List<Double> roots = findAllRoots(function, -470, 470, 0.5, 1e-7, 100);
-                            long endTime = System.nanoTime();
-                            System.out.println("Roots ≈ " + roots);
-                            System.out.println("Calculation time: " + (endTime - startTime) / 1_000_000.0 + " ms");
-                        }
-
-                    } else if (choice.equals("3")) {
-                        // ASCII
-                        drawGraph(function, -20, 20, -10, 10);
-                        // JFreeChart
-                        GraphPlotter.drawGraph(input, -20, 20, 0.01);
-                        // JavaFX
-                        GraphPlotterFX.launchGraph(input);
-
-                    } else if (choice.equals("4")) {
-                        System.out.println("Enter shader function f(x,y) = ");
-                        String shaderFunc = scanner.nextLine().trim();
-                        Shaders.showShader(shaderFunc);
-
-                    } else if (choice.equals("5")) {
-                        System.out.println("Enter GLSL code snippet:");
-                        StringBuilder glslInput = new StringBuilder();
-                        String line;
-                        while (!(line = scanner.nextLine()).isEmpty()) {
-                            glslInput.append(line).append("\n");
-                        }
-                        String converted = GLSLToExp4j.convert(glslInput.toString());
-                        System.out.println("Converted formula for option 4:");
-                        System.out.println(converted);
+                    if (method.equals("1")) {
+                        List<Double> roots = findAllRootsNewton(function, -470, 470, 1.0, 1e-7, 100);
+                        long endTime = System.nanoTime();
+                        System.out.println("Roots ≈ " + roots);
+                        System.out.println("Calculation time: " + (endTime - startTime) / 1_000_000.0 + " ms");
+                    } else if (method.equals("2")) {
+                        List<Double> roots = findAllRoots(function, -470, 470, 0.5, 1e-7, 100);
+                        long endTime = System.nanoTime();
+                        System.out.println("Roots ≈ " + roots);
+                        System.out.println("Calculation time: " + (endTime - startTime) / 1_000_000.0 + " ms");
                     }
 
-                } catch (Exception e) { // handles unexpected exceptions caused by user skill issue
-                    System.out.println("Error: Invalid function! Please check your syntax.");
-                    System.out.println("You can use:");
-                    System.out.println("- Basic operations: +, -, *, /, ^");
-                    System.out.println("- Functions: sin(x), cos(x), tan(x), log(x), sqrt(x)");
-                    System.out.println("- Example: xcos(x) or 2x^3+3x^2-12x");
+                } else if (choice.equals("3")) {
+                    // ASCII
+                    drawGraph(function, -20, 20, -10, 10);
+                    // JFreeChart
+                    GraphPlotter.drawGraph(input, -20, 20, 0.01);
+                    // JavaFX
+                    GraphPlotterFX.launchGraph(input);
+
+                } else if (choice.equals("4")) { //simulated using java
+                    System.out.println("Enter shader function f(x,y) = ");
+                    String shaderFunc = scanner.nextLine().trim();
+                    Shaders.showShader(shaderFunc);
+
+                } else if (choice.equals("5")) { //opengl shader
+                    System.out.println("\nEnter a GLSL snippet. Assign a 'vec3' to the 'color' variable.");
+                    System.out.println("You can use: ");
+                    System.out.println(" - vec2 uv: Screen coordinates from (0,0) to (1,1).");
+                    System.out.println(" - float u_time: Time in seconds for animations.");
+                    System.out.println(" - vec2 mouse: Mouse coordinates from (0,0) to (1,1).");
+                    System.out.println("Example: color = vec3(uv.x, uv.y, abs(sin(u_time)));");
+                    System.out.print("Your code: ");
+                    String shaderCode = scanner.nextLine().trim();
+                    try {
+                        ShaderViewerLWJGL.launch(shaderCode);
+                    } catch (Exception e) {
+                        System.err.println("\n--- LWJGL/OpenGL Error ---");
+                        System.err.println("Failed to launch the shader viewer.");
+                        System.err.println("Please ensure your graphics drivers are up to date and that LWJGL is configured correctly.");
+                        e.printStackTrace();
+                    }
+
+                } else if (choice.equals("6")) {
+                    System.out.println("Enter GLSL code snippet:");
+                    StringBuilder glslInput = new StringBuilder();
+                    String line;
+                    while (!(line = scanner.nextLine()).isEmpty()) {
+                        glslInput.append(line).append("\n");
+                    }
+                    String converted = GLSLToExp4j.convert(glslInput.toString());
+                    System.out.println("Converted formula for option 4:");
+                    System.out.println(converted);
                 }
-            }
 
-            // fix not-reopening when entering a new function
-            if (GraphPlotterFX.isAppLaunched()) {
-                GraphPlotterFX.shutdown();
+            } catch (Exception e) { // handles unexpected exceptions caused by user skill issue
+                System.out.println("Error: Invalid function! Please check your syntax.");
+                System.out.println("You can use:");
+                System.out.println("- Basic operations: +, -, *, /, ^");
+                System.out.println("- Functions: sin(x), cos(x), tan(x), log(x), sqrt(x)");
+                System.out.println("- Example: xcos(x) or 2x^3+3x^2-12x");
             }
-
-            scanner.close();
-            System.out.println("Program exited.");
         }
 
-        // (your testFunction, checkFunctionType, newtonRaphson, bisection,
-        //  findAllRoots, findAllRootsNewton, drawGraph methods remain unchanged)
+        // fix not-reopening when entering a new function
+        if (GraphPlotterFX.isAppLaunched()) {
+            GraphPlotterFX.shutdown();
+        }
 
+        scanner.close();
+        System.out.println("Program exited.");
+    }
 
 
     public static void testFunction(DoubleUnaryOperator f, String functionDescription, double x) {
@@ -226,5 +239,4 @@ import org.example.Shading.GLSLToExp4j;
             System.out.println(line);
         }
     }
-
 }

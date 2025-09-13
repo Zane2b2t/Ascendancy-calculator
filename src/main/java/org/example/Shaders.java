@@ -78,7 +78,6 @@ public class Shaders {
         return img;
     }
 
-    /** Opens a Swing window to preview an animated shader. */
     public static void showShader(String exprStr) {
         int w = 600, h = 600;
         JFrame f = new JFrame("Animated Shader - " + exprStr);

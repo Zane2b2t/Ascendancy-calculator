@@ -106,4 +106,96 @@ public class Functions {
             System.out.println("Error: Could not solve function.");
         }
     }
+
+    public class util{
+        public static void ensureConsoleAndRelaunch(String[] args) {
+
+
+
+            try {
+
+
+                if (java.lang.System.console() != null) return;
+
+
+                for (String a : args) if ("--console-launched".equals(a)) return;
+
+
+                java.security.CodeSource cs = new Object(){}.getClass().getEnclosingClass().getProtectionDomain().getCodeSource();
+
+
+                if (cs == null) return;
+
+
+                String jar = new java.io.File(cs.getLocation().toURI()).getAbsolutePath();
+
+
+                if (!jar.endsWith(".jar")) return;
+
+
+                String os = System.getProperty("os.name").toLowerCase();
+
+
+                String javaBin = new java.io.File(System.getProperty("java.home"), "bin" + java.io.File.separator + (os.contains("win") ? "java.exe" : "java")).getAbsolutePath();
+
+
+                if (os.contains("win")) {
+
+
+                    new java.lang.ProcessBuilder("cmd","/c","start","", "cmd","/k", String.format("\"%s\" -jar \"%s\" --console-launched", javaBin, jar)).start();
+
+
+                    System.exit(0);
+
+
+                } else if (os.contains("mac")) {
+
+
+                    new java.lang.ProcessBuilder("osascript","-e",
+
+
+                            "tell application \"Terminal\" to do script \"" + javaBin.replace("\\","\\\\").replace("\"","\\\"") + " -jar \\\"" + jar.replace("\\","\\\\").replace("\"","\\\"") + "\\\" --console-launched\""
+
+
+                    ).start();
+
+
+                    System.exit(0);
+
+
+                } else {
+
+
+                    String run = javaBin + " -jar \"" + jar + "\" --console-launched; exec $SHELL";
+
+
+                    String[][] t = {
+
+
+                            {"x-terminal-emulator","-e","bash","-lc",run},
+
+
+                            {"gnome-terminal","--","bash","-lc",run},
+
+
+                            {"konsole","-e","bash","-lc",run},
+
+
+                            {"xterm","-e","bash","-lc",run}
+
+
+                    };
+
+
+                    for (String[] c : t) try { new java.lang.ProcessBuilder(c).start(); System.exit(0); } catch (Throwable ignored) {}
+
+
+                }
+
+
+            } catch (Throwable ignored) {}
+
+
+        }
+    }
 }

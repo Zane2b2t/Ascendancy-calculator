@@ -11,6 +11,7 @@ import org.example.math.Functions;
 public class Main {
 
     public static void main(String[] args) throws Exception {
+        Functions.util.ensureConsoleAndRelaunch(args);
         boolean aiMode = false;
         Scanner scanner = new Scanner(System.in);
         String currentFunction = null;
@@ -38,8 +39,9 @@ public class Main {
             }
 
             if (aiMode) {
+                System.out.println("Responding..");
                 String aiResponse = GeminiAI.askAI(input);
-                System.out.println("AI says: " + aiResponse);
+                System.out.println("<Ascendancy>: " + aiResponse);
                 continue;
             }
 

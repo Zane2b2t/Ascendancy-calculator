@@ -7,6 +7,7 @@ import net.objecthunter.exp4j.Expression;
 import net.objecthunter.exp4j.ExpressionBuilder;
 import org.example.ai.GeminiAI;
 import org.example.math.Functions;
+import org.example.math.SystemSolver;
 
 public class Main {
 
@@ -52,6 +53,14 @@ public class Main {
                     continue;
                 }
                 handleFunctionMenu(scanner, currentFunction);
+                continue;
+            }
+            if (input.toLowerCase().startsWith("system")) {
+                System.out.println("Enter first equation (e.g. 24x + y = 48):");
+                String eq1 = scanner.nextLine();
+                System.out.println("Enter second equation (e.g. 6x + y = 72):");
+                String eq2 = scanner.nextLine();
+                SystemSolver.solve2x2(eq1, eq2);
                 continue;
             }
 

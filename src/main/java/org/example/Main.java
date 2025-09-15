@@ -5,17 +5,44 @@ import java.util.function.DoubleUnaryOperator;
 
 import net.objecthunter.exp4j.Expression;
 import net.objecthunter.exp4j.ExpressionBuilder;
+import org.example.ai.GeminiAI;
 import org.example.math.Functions;
 
 public class Main {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
+        boolean aiMode = false;
         Scanner scanner = new Scanner(System.in);
         String currentFunction = null;
 
+        GeminiAI.loadApiKey();
+
         while (true) {
+            System.out.print("> ");
             String input = scanner.nextLine().trim();
             if (input.equalsIgnoreCase("exit")) break;
+
+            if (input.equalsIgnoreCase("setapikey")) {
+                System.out.print("Enter your Gemini API key: ");
+                String key = scanner.nextLine().trim();
+                GeminiAI.saveApiKey(key);
+                System.out.println("API key saved.");
+                continue;
+            }
+
+
+            if (input.equalsIgnoreCase("a47b")) {
+                aiMode = true;
+                System.out.println("AI mode activated. Type your questions:");
+                continue;
+            }
+
+            if (aiMode) {
+                String aiResponse = GeminiAI.askAI(input);
+                System.out.println("AI says: " + aiResponse);
+                continue;
+            }
+
 
             if (input.equalsIgnoreCase("shift")) {
                 if (currentFunction == null) {
@@ -30,16 +57,13 @@ public class Main {
                 input = input.substring(7);
             }
 
-            // Handle implicit multiplication
             input = Functions.fixImplicitMultiplication(input);
 
-            // Equation solving
             if (input.contains("=")) {
                 Functions.solveEquation(input);
                 continue;
             }
 
-            // Normal calculator
             try {
                 if (!input.toLowerCase().contains("x")) {
                     Expression expression = new ExpressionBuilder(input).build();
@@ -67,7 +91,7 @@ public class Main {
                 "\n 1: Check Odd/Even" +
                 "\n 2: Solve Equation" +
                 "\n 3: Draw Graph"
-                );
+        );
 
         String choice = scanner.nextLine().trim();
         try {
@@ -83,7 +107,6 @@ public class Main {
                 case "3":
                     GraphPlotterFX.launchGraph(func);
                     break;
-
                 default:
                     System.out.println("Not implemented yet.");
             }

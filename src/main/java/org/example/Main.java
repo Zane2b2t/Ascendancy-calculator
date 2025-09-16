@@ -1,7 +1,6 @@
 package org.example;
 
 import java.util.Scanner;
-import java.util.function.DoubleUnaryOperator;
 
 import net.objecthunter.exp4j.Expression;
 import net.objecthunter.exp4j.ExpressionBuilder;
@@ -13,6 +12,7 @@ public class Main {
 
     public static void main(String[] args) throws Exception {
         Functions.util.ensureConsoleAndRelaunch(args);
+
         boolean aiMode = false;
         Scanner scanner = new Scanner(System.in);
         String currentFunction = null;
@@ -32,7 +32,6 @@ public class Main {
                 continue;
             }
 
-
             if (input.equalsIgnoreCase("a47b")) {
                 aiMode = true;
                 System.out.println("AI mode activated. Type your questions:");
@@ -46,7 +45,6 @@ public class Main {
                 continue;
             }
 
-
             if (input.equalsIgnoreCase("shift")) {
                 if (currentFunction == null) {
                     System.out.println("No function with x is set yet.");
@@ -55,12 +53,16 @@ public class Main {
                 handleFunctionMenu(scanner, currentFunction);
                 continue;
             }
+
             if (input.toLowerCase().startsWith("system")) {
-                System.out.println("Enter first equation (e.g. 24x + y = 48):");
-                String eq1 = scanner.nextLine();
-                System.out.println("Enter second equation (e.g. 6x + y = 72):");
-                String eq2 = scanner.nextLine();
-                SystemSolver.solve2x2(eq1, eq2);
+                System.out.println("Enter number of equations:");
+                int n = Integer.parseInt(scanner.nextLine());
+                String[] equations = new String[n];
+                for (int i = 0; i < n; i++) {
+                    System.out.println("Enter equation " + (i + 1) + ":");
+                    equations[i] = scanner.nextLine();
+                }
+                SystemSolver.solveSystem(equations);
                 continue;
             }
 
@@ -96,7 +98,7 @@ public class Main {
     }
 
     private static void handleFunctionMenu(Scanner scanner, String func) {
-        DoubleUnaryOperator f = Functions.buildFunction(func);
+        var f = Functions.buildFunction(func);
 
         System.out.println("Choose an option:" +
                 "\n 1: Check Odd/Even" +

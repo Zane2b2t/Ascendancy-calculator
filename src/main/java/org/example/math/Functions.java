@@ -198,4 +198,8 @@ public class Functions {
 
         }
     }
+
+    public class fun {
+
+    }
 }

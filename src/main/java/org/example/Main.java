@@ -14,6 +14,7 @@ public class Main {
         Functions.util.ensureConsoleAndRelaunch(args);
 
         boolean aiMode = false;
+        boolean alwaysOnTop = false;
         Scanner scanner = new Scanner(System.in);
         String currentFunction = null;
 
@@ -24,6 +25,19 @@ public class Main {
             String input = scanner.nextLine().trim();
             if (input.equalsIgnoreCase("exit")) break;
 
+            if (input.equalsIgnoreCase("ontop")) {
+                if (!alwaysOnTop) {
+                    Functions.util.setConsoleAlwaysOnTop();
+                    alwaysOnTop = true;
+                    System.out.println("Console set to always on top.");
+                } else {
+                    Functions.util.removeAlwaysOnTop();
+                    alwaysOnTop = false;
+                    System.out.println("Console removed from always on top.");
+                }
+                continue;
+            }
+
             if (input.equalsIgnoreCase("setapikey")) {
                 System.out.print("Enter your Gemini API key: ");
                 String key = scanner.nextLine().trim();
@@ -32,12 +46,16 @@ public class Main {
                 continue;
             }
 
-            if (input.equalsIgnoreCase("a47b")) {
+            if (input.equalsIgnoreCase("a47b") && !aiMode) {
                 aiMode = true;
                 System.out.println("AI mode activated. Type your questions:");
                 continue;
             }
-
+            if (aiMode && input.equalsIgnoreCase("a47b")) {
+                aiMode = false;
+                System.out.println("Disabled AI");
+                continue;
+            }
             if (aiMode) {
                 System.out.println("Responding..");
                 String aiResponse = GeminiAI.askAI(input);

@@ -1,5 +1,7 @@
 package org.example.math;
 
+import com.sun.jna.Library;
+import com.sun.jna.win32.W32APIOptions;
 import net.objecthunter.exp4j.Expression;
 import net.objecthunter.exp4j.ExpressionBuilder;
 
@@ -7,6 +9,9 @@ import java.util.List;
 import java.util.Scanner;
 import java.util.function.DoubleUnaryOperator;
 
+import com.sun.jna.Native;
+import com.sun.jna.platform.win32.User32;
+import com.sun.jna.platform.win32.WinDef;
 public class Functions {
 
     // --- Expression utilities ---
@@ -107,95 +112,115 @@ public class Functions {
         }
     }
 
-    public class util{
+
+    public class util {
+
+        public interface WinAPI extends Library {
+            WinAPI INSTANCE = Native.load("kernel32", WinAPI.class);
+
+            WinDef.HWND GetConsoleWindow();
+        }
+
+        public static void setConsoleAlwaysOnTop() {
+            if (System.getProperty("os.name").toLowerCase().contains("win")) {
+                try {
+                    WinDef.HWND consoleWindow = WinAPI.INSTANCE.GetConsoleWindow();
+                    if (consoleWindow != null && !consoleWindow.getPointer().equals(com.sun.jna.Pointer.NULL)) {
+                        User32.INSTANCE.SetWindowPos(consoleWindow,
+                                new WinDef.HWND(new com.sun.jna.Pointer(-1)),
+                                0, 0, 0, 0,
+                                0x0001 | 0x0002);
+                    }
+                } catch (Exception e) {
+                    System.err.println("Could not set console always on top: " + e.getMessage());
+                }
+            }
+        }
+
+        public static void removeAlwaysOnTop() {
+            if (System.getProperty("os.name").toLowerCase().contains("win")) {
+                try {
+                    WinDef.HWND consoleWindow = WinAPI.INSTANCE.GetConsoleWindow();
+                    if (consoleWindow != null && !consoleWindow.getPointer().equals(com.sun.jna.Pointer.NULL)) {
+                        User32.INSTANCE.SetWindowPos(consoleWindow,
+                                new WinDef.HWND(new com.sun.jna.Pointer(-2)),
+                                0, 0, 0, 0,
+                                0x0001 | 0x0002);
+                    }
+                } catch (Exception e) {
+                    System.err.println("Could not remove always on top: " + e.getMessage());
+                }
+            }
+        }
+
+        private static boolean shouldSetAlwaysOnTop(String[] args) {
+            for (String arg : args) {
+                if ("--always-on-top".equals(arg) || "--ontop".equals(arg)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         public static void ensureConsoleAndRelaunch(String[] args) {
-
-
-
             try {
+                boolean alwaysOnTop = shouldSetAlwaysOnTop(args);
 
+                if (java.lang.System.console() != null) {
+                    if (alwaysOnTop) {
+                        setConsoleAlwaysOnTop();
+                    }
+                    return;
+                }
 
-                if (java.lang.System.console() != null) return;
-
-
-                for (String a : args) if ("--console-launched".equals(a)) return;
-
+                for (String a : args) if ("--console-launched".equals(a)) {
+                    if (alwaysOnTop) {
+                        setConsoleAlwaysOnTop();
+                    }
+                    return;
+                }
 
                 java.security.CodeSource cs = new Object(){}.getClass().getEnclosingClass().getProtectionDomain().getCodeSource();
 
-
                 if (cs == null) return;
-
 
                 String jar = new java.io.File(cs.getLocation().toURI()).getAbsolutePath();
 
-
                 if (!jar.endsWith(".jar")) return;
-
 
                 String os = System.getProperty("os.name").toLowerCase();
 
-
                 String javaBin = new java.io.File(System.getProperty("java.home"), "bin" + java.io.File.separator + (os.contains("win") ? "java.exe" : "java")).getAbsolutePath();
 
+                // Build arguments string to pass through
+                StringBuilder argsBuilder = new StringBuilder();
+                for (String arg : args) {
+                    if (!"--console-launched".equals(arg)) {
+                        argsBuilder.append(" \"").append(arg).append("\"");
+                    }
+                }
+                String argsString = argsBuilder.toString();
 
                 if (os.contains("win")) {
-
-
-                    new java.lang.ProcessBuilder("cmd","/c","start","", "cmd","/k", String.format("\"%s\" -jar \"%s\" --console-launched", javaBin, jar)).start();
-
-
+                    new java.lang.ProcessBuilder("cmd","/c","start","", "cmd","/k",
+                            String.format("\"%s\" -jar \"%s\" --console-launched%s", javaBin, jar, argsString)).start();
                     System.exit(0);
-
-
                 } else if (os.contains("mac")) {
-
-
                     new java.lang.ProcessBuilder("osascript","-e",
-
-
-                            "tell application \"Terminal\" to do script \"" + javaBin.replace("\\","\\\\").replace("\"","\\\"") + " -jar \\\"" + jar.replace("\\","\\\\").replace("\"","\\\"") + "\\\" --console-launched\""
-
-
+                            "tell application \"Terminal\" to do script \"" + javaBin.replace("\\","\\\\").replace("\"","\\\"") + " -jar \\\"" + jar.replace("\\","\\\\").replace("\"","\\\"") + "\\\" --console-launched" + argsString + "\""
                     ).start();
-
-
                     System.exit(0);
-
-
                 } else {
-
-
-                    String run = javaBin + " -jar \"" + jar + "\" --console-launched; exec $SHELL";
-
-
+                    String run = javaBin + " -jar \"" + jar + "\" --console-launched" + argsString + "; exec $SHELL";
                     String[][] t = {
-
-
                             {"x-terminal-emulator","-e","bash","-lc",run},
-
-
                             {"gnome-terminal","--","bash","-lc",run},
-
-
                             {"konsole","-e","bash","-lc",run},
-
-
                             {"xterm","-e","bash","-lc",run}
-
-
                     };
-
-
                     for (String[] c : t) try { new java.lang.ProcessBuilder(c).start(); System.exit(0); } catch (Throwable ignored) {}
-
-
                 }
-
-
             } catch (Throwable ignored) {}
-
-
         }
     }
 

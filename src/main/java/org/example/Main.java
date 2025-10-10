@@ -26,7 +26,6 @@ public class Main {
             String input = scanner.nextLine().trim();
             if (input.equalsIgnoreCase("exit")) break;
 
-            // Help / Commands
             if (input.equalsIgnoreCase("help") || input.equalsIgnoreCase("commands")) {
                 Functions.util.printHelp();
                 continue;

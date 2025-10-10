@@ -147,9 +147,9 @@ public class GraphPlotter extends Application {
         themeDropdown.setValue("Forest (Discord)");
         themeDropdown.valueProperty().addListener((obs, oldV, newV) -> {
             switch (newV) {
-                case "Forest (Discord)" -> themeManager.setCurrentTheme(GraphThemeManager.Theme.FOREST);
+                case "Forest" -> themeManager.setCurrentTheme(GraphThemeManager.Theme.FOREST);
                 case "Light" -> themeManager.setCurrentTheme(GraphThemeManager.Theme.LIGHT);
-                case "Black & Blue (Fugitive Aero)" -> themeManager.setCurrentTheme(GraphThemeManager.Theme.BLACK_BLUE);
+                case "Black & Blue" -> themeManager.setCurrentTheme(GraphThemeManager.Theme.BLACK_BLUE);
                 default -> themeManager.setCurrentTheme(GraphThemeManager.Theme.DARK);
             }
             themeManager.applyThemeToScene(stage.getScene());
@@ -210,7 +210,7 @@ public class GraphPlotter extends Application {
             redraw(gc);
         });
 
-        stage.setTitle("Modern Graph Plotter");
+        stage.setTitle("Ascendancy graphing calculator");
         stage.setScene(scene);
         stage.setOnCloseRequest(e -> {
             e.consume();

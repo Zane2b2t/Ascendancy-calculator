@@ -51,7 +51,6 @@ public class GraphRenderer {
     public void redraw(GraphicsContext gc, Canvas canvas, List<String> functions) {
         double w = canvas.getWidth();
         double h = canvas.getHeight();
-        // Minimal overscan margin to avoid edge clipping without performance hit
         double overscan = 2; // pixels
 
         Paint bgPaint = themeManager.getBackgroundPaint();
@@ -66,8 +65,7 @@ public class GraphRenderer {
         double minPixelSpacing = 50;
         double rawStep = minPixelSpacing / pixelsPerUnit;
         double step = logic.chooseNiceStep(rawStep);
-        // Adaptive sampling: when zoomed out (small scale), skip pixels to reduce workload
-        int pxStep = Math.max(1, (int)Math.round(30.0 / Math.max(1e-6, logic.getScale())));
+        int pxStep = 1;
 
         gc.setStroke(gridColor);
         gc.setLineWidth(1);
@@ -129,11 +127,12 @@ public class GraphRenderer {
                 for (int ri = before; ri < after; ri++) {
                     double vx = verticalLines.get(ri);
                     List<double[]> vpts = new ArrayList<>();
+                    // Use visible world bounds for hover data but clamp drawing to canvas [0,h]
                     double worldYMin = (-h / 2 - logic.getOffsetY()) / logic.getScale();
                     double worldYMax = (h / 2 - logic.getOffsetY()) / logic.getScale();
                     double screenX = w / 2 + vx * logic.getScale() + logic.getOffsetX();
-                    double screenYTop = h / 2 - worldYMax * logic.getScale() + logic.getOffsetY();
-                    double screenYBottom = h / 2 - worldYMin * logic.getScale() + logic.getOffsetY();
+                    double screenYTop = 0;           // clamp to top edge
+                    double screenYBottom = h;
                     vpts.add(new double[]{screenX, screenYTop, vx, worldYMax});
                     vpts.add(new double[]{screenX, screenYBottom, vx, worldYMin});
                     functionPoints.add(vpts);
@@ -170,11 +169,12 @@ public class GraphRenderer {
                     for (int ri = before; ri < after; ri++) {
                         double vx = verticalLines.get(ri);
                         List<double[]> vpts = new ArrayList<>();
+                        // Use visible world bounds for hover data but clamp drawing to canvas [0,h]
                         double worldYMin = (-h / 2 - logic.getOffsetY()) / logic.getScale();
                         double worldYMax = (h / 2 - logic.getOffsetY()) / logic.getScale();
                         double screenX = w / 2 + vx * logic.getScale() + logic.getOffsetX();
-                        double screenYTop = h / 2 - worldYMax * logic.getScale() + logic.getOffsetY();
-                        double screenYBottom = h / 2 - worldYMin * logic.getScale() + logic.getOffsetY();
+                        double screenYTop = 0;           // clamp to top edge
+                        double screenYBottom = h;        // clamp to bottom edge
                         vpts.add(new double[]{screenX, screenYTop, vx, worldYMax});
                         vpts.add(new double[]{screenX, screenYBottom, vx, worldYMin});
                         functionPoints.add(vpts);

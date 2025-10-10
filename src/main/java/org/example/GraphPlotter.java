@@ -21,6 +21,7 @@ public class GraphPlotter extends Application {
     private final GraphRenderer renderer = new GraphRenderer(logic, themeManager);
 
     private double dragStartX, dragStartY;
+    private double lastMouseX = Double.NaN, lastMouseY = Double.NaN; // track for zoom-to-mouse during animated zoom
 
     private final ObservableList<String> functions = FXCollections.observableArrayList();
 
@@ -142,10 +143,11 @@ public class GraphPlotter extends Application {
         zoomToMouseCheckbox.selectedProperty().addListener((obs, oldV, newV) -> logic.setZoomToMouse(newV));
 
         ComboBox<String> themeDropdown = new ComboBox<>();
-        themeDropdown.getItems().addAll("Dark", "Light", "Black & Blue (Fugitive Aero)");
-        themeDropdown.setValue("Dark");
+        themeDropdown.getItems().addAll("Forest (Discord)", "Dark", "Light", "Black & Blue (Fugitive Aero)");
+        themeDropdown.setValue("Forest (Discord)");
         themeDropdown.valueProperty().addListener((obs, oldV, newV) -> {
             switch (newV) {
+                case "Forest (Discord)" -> themeManager.setCurrentTheme(GraphThemeManager.Theme.FOREST);
                 case "Light" -> themeManager.setCurrentTheme(GraphThemeManager.Theme.LIGHT);
                 case "Black & Blue (Fugitive Aero)" -> themeManager.setCurrentTheme(GraphThemeManager.Theme.BLACK_BLUE);
                 default -> themeManager.setCurrentTheme(GraphThemeManager.Theme.DARK);
@@ -172,6 +174,8 @@ public class GraphPlotter extends Application {
         canvas.setOnMousePressed(e -> {
             dragStartX = e.getX();
             dragStartY = e.getY();
+            lastMouseX = e.getX();
+            lastMouseY = e.getY();
         });
 
         canvas.setOnMouseDragged(e -> {
@@ -179,12 +183,16 @@ public class GraphPlotter extends Application {
             logic.setOffsetY(logic.getOffsetY() + e.getY() - dragStartY);
             dragStartX = e.getX();
             dragStartY = e.getY();
+            lastMouseX = e.getX();
+            lastMouseY = e.getY();
             redraw(gc);
         });
 
         canvas.setOnScroll(e -> {
             double delta = e.getDeltaY();
             double baseFactor = (delta > 0) ? 1.1 : 0.9;
+            lastMouseX = e.getX();
+            lastMouseY = e.getY();
 
             if (logic.getZoomMode().equals("None")) {
                 logic.applyScale(baseFactor, e.getX(), e.getY(), logic.isZoomToMouse(), canvas);
@@ -197,6 +205,8 @@ public class GraphPlotter extends Application {
 
         canvas.setOnMouseMoved(e -> {
             renderer.setMousePosition(e.getX(), e.getY());
+            lastMouseX = e.getX();
+            lastMouseY = e.getY();
             redraw(gc);
         });
 
@@ -297,6 +307,7 @@ public class GraphPlotter extends Application {
                         switch (themeManager.getCurrentTheme()) {
                             case DARK -> setStyle("-fx-text-fill: #dcdcdc; -fx-background-color: transparent;");
                             case BLACK_BLUE -> setStyle("-fx-text-fill: #9fdcff; -fx-background-color: transparent;");
+                            case FOREST -> setStyle("-fx-text-fill: #dfe6dd; -fx-background-color: transparent;");
                             default -> setStyle("");
                         }
                     }
@@ -318,6 +329,13 @@ public class GraphPlotter extends Application {
                 int idx = cell.getIndex();
                 if (idx >= 0 && idx < functions.size()) {
                     functions.remove(idx);
+                    listView.getSelectionModel().clearSelection();
+                    updateBtn.setDisable(true);
+                    removeBtn.setDisable(true);
+                    functionInput.clear();
+                    renderer.setPreviewExpr("");
+                    renderer.setPreviewReplaceIndex(-1);
+                    redraw(canvas.getGraphicsContext2D());
                 }
             });
             duplicateItem.setOnAction(e -> {
@@ -355,8 +373,8 @@ public class GraphPlotter extends Application {
                     double factor = Math.exp(logic.getZoomVelocity());
                     factor = logic.applyEasing(factor);
 
-                    double mouseX = canvas.getWidth() / 2.0;
-                    double mouseY = canvas.getHeight() / 2.0;
+                    double mouseX = (Double.isNaN(lastMouseX) || Double.isNaN(lastMouseY)) ? canvas.getWidth() / 2.0 : lastMouseX;
+                    double mouseY = (Double.isNaN(lastMouseX) || Double.isNaN(lastMouseY)) ? canvas.getHeight() / 2.0 : lastMouseY;
 
                     if (logic.isZoomToMouse()) {
                         logic.applyScale(factor, mouseX, mouseY, true, canvas);

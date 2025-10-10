@@ -7,7 +7,7 @@ import net.objecthunter.exp4j.ExpressionBuilder;
 import org.example.ai.GeminiAI;
 import org.example.math.Functions;
 import org.example.math.SystemSolver;
-import org.example.math.Algorthims; // <-- import our derivative methods
+import org.example.math.Algorthims;
 
 public class Main {
 

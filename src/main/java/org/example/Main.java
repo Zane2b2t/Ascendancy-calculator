@@ -7,6 +7,7 @@ import net.objecthunter.exp4j.ExpressionBuilder;
 import org.example.ai.GeminiAI;
 import org.example.math.Functions;
 import org.example.math.SystemSolver;
+import org.example.math.Algorthims; // <-- import our derivative methods
 
 public class Main {
 
@@ -108,8 +109,8 @@ public class Main {
             }
         }
 
-        if (GraphPlotterFX.isAppLaunched()) {
-            GraphPlotterFX.shutdown();
+        if (GraphPlotter.isAppLaunched()) {
+            GraphPlotter.shutdown();
         }
         scanner.close();
         System.out.println("Program exited.");
@@ -121,7 +122,10 @@ public class Main {
         System.out.println("Choose an option:" +
                 "\n 1: Check Odd/Even" +
                 "\n 2: Solve Equation" +
-                "\n 3: Draw Graph"
+                "\n 3: Draw Graph" +
+                "\n 4: First Derivative at a point" +
+                "\n 5: Second Derivative at a point" +
+                "\n 6: nth Derivative at a point"
         );
 
         String choice = scanner.nextLine().trim();
@@ -136,7 +140,27 @@ public class Main {
                     Functions.solveWithMenu(scanner, f);
                     break;
                 case "3":
-                    GraphPlotterFX.launchGraph(func);
+                    GraphPlotter.launchGraph(func);
+                    break;
+                case "4":
+                    System.out.print("Enter a value for x: ");
+                    double x1 = Double.parseDouble(scanner.nextLine());
+                    double d1 = Algorthims.derivative(f, x1);
+                    System.out.println("f'(x) ≈ " + d1);
+                    break;
+                case "5":
+                    System.out.print("Enter a value for x: ");
+                    double x2 = Double.parseDouble(scanner.nextLine());
+                    double d2 = Algorthims.secondDerivative(f, x2);
+                    System.out.println("f''(x) ≈ " + d2);
+                    break;
+                case "6":
+                    System.out.print("Enter order n: ");
+                    int n = Integer.parseInt(scanner.nextLine());
+                    System.out.print("Enter a value for x: ");
+                    double xn = Double.parseDouble(scanner.nextLine());
+                    double dn = Algorthims.nthDerivative(f, xn, n);
+                    System.out.println("f^(" + n + ")(x) ≈ " + dn);
                     break;
                 default:
                     System.out.println("Not implemented yet.");

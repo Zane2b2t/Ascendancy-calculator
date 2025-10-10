@@ -69,4 +69,33 @@ public class Algorthims {
         }
         return roots;
     }
+
+    //derivatives
+    public static double derivative(DoubleUnaryOperator f, double x) {
+        double h = 1e-6;
+        return (f.applyAsDouble(x + h) - f.applyAsDouble(x - h)) / (2 * h);
+    }
+
+    /** Second derivative using central difference */
+    public static double secondDerivative(DoubleUnaryOperator f, double x) {
+        double h = 1e-6;
+        return (f.applyAsDouble(x + h) - 2 * f.applyAsDouble(x) + f.applyAsDouble(x - h)) / (h * h);
+    }
+
+    /** nth derivative (recursive, not very efficient for large n) */
+    public static double nthDerivative(DoubleUnaryOperator f, double x, int n) {
+        if (n == 1) return derivative(f, x);
+        if (n == 2) return secondDerivative(f, x);
+        double h = 1e-5;
+        return (nthDerivative(f, x + h, n - 1) - nthDerivative(f, x - h, n - 1)) / (2 * h);
+    }
+
+    /** Gradient for a list of points (approximate derivative values) */
+    public static List<Double> derivativeOverRange(DoubleUnaryOperator f, double start, double end, double step) {
+        List<Double> values = new ArrayList<>();
+        for (double x = start; x <= end; x += step) {
+            values.add(derivative(f, x));
+        }
+        return values;
+    }
 }

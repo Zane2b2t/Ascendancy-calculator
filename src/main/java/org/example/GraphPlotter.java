@@ -143,8 +143,8 @@ public class GraphPlotter extends Application {
         zoomToMouseCheckbox.selectedProperty().addListener((obs, oldV, newV) -> logic.setZoomToMouse(newV));
 
         ComboBox<String> themeDropdown = new ComboBox<>();
-        themeDropdown.getItems().addAll("Forest (Discord)", "Dark", "Light", "Black & Blue (Fugitive Aero)");
-        themeDropdown.setValue("Forest (Discord)");
+        themeDropdown.getItems().addAll("Forest", "Dark", "Light", "Black & Blue");
+        themeDropdown.setValue("Forest");
         themeDropdown.valueProperty().addListener((obs, oldV, newV) -> {
             switch (newV) {
                 case "Forest" -> themeManager.setCurrentTheme(GraphThemeManager.Theme.FOREST);

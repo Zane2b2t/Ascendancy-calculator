@@ -222,6 +222,31 @@ public class Functions {
                 }
             } catch (Throwable ignored) {}
         }
+        public static void printHelp() {
+            System.out.println("Ascendancy.calc - Commands and Usage:\n" +
+                    "\n" +
+                    "Commands:\n" +
+                    " - exit             : Quit the program\n" +
+                    " - help | commands  : Show this help\n" +
+                    " - ontop            : Toggle console always-on-top\n" +
+                    " - setapikey        : Enter and save Gemini API key\n" +
+                    " - a47b             : Toggle AI Q&A mode (type again to disable)\n" +
+                    " - wasd            : Open function tools menu for current f(x)\n" +
+                    " - system           : Solve a system of equations (you will be prompted)\n" +
+                    "\n" +
+                    "Math input:\n" +
+                    " - Enter numeric expressions to evaluate, e.g. 2+3*4, sin(1), sqrt(2).\n" +
+                    " - Enter a function in x to store it, e.g. x^2+3x+2 or f(x) = x^3 - 1.\n" +
+                    "   Then type 'wasd' to: check odd/even, solve, draw graph, or compute derivatives.\n" +
+                    " - Enter an equation to solve, e.g. 2x+5 = 11, sin(x) = 0.5, or x = 3.\n" +
+                    "\n" +
+                    "Examples:\n" +
+                    " - 3+4/2\n" +
+                    " - f(x) = x^2 + 2x + 1   (then type 'wasd')\n" +
+                    " - 2x + 5 = 11   (shows solutions to x)\n" +
+                    " - system               (then enter number of equations and each equation)\n"
+            );
+        }
     }
 
     public class fun {

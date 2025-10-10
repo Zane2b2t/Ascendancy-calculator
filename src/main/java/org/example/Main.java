@@ -26,6 +26,12 @@ public class Main {
             String input = scanner.nextLine().trim();
             if (input.equalsIgnoreCase("exit")) break;
 
+            // Help / Commands
+            if (input.equalsIgnoreCase("help") || input.equalsIgnoreCase("commands")) {
+                Functions.util.printHelp();
+                continue;
+            }
+
             if (input.equalsIgnoreCase("ontop")) {
                 if (!alwaysOnTop) {
                     Functions.util.setConsoleAlwaysOnTop();
@@ -64,7 +70,7 @@ public class Main {
                 continue;
             }
 
-            if (input.equalsIgnoreCase("shift")) {
+            if (input.equalsIgnoreCase("wasd")) {
                 if (currentFunction == null) {
                     System.out.println("No function with x is set yet.");
                     continue;
@@ -102,10 +108,10 @@ public class Main {
                     System.out.println(expression.evaluate());
                 } else {
                     currentFunction = input;
-                    System.out.println("Function f(x) = " + currentFunction + " stored. (Type 'shift' for options)");
+                    System.out.println("Function f(x) = " + currentFunction + " stored. (Type 'wasd' for options)");
                 }
             } catch (Exception e) {
-                System.out.println("Error: Invalid input! Try again.");
+                System.out.println("Error: Invalid input! Type 'help' to see usage and examples.");
             }
         }
 

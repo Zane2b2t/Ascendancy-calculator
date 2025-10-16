@@ -105,7 +105,7 @@ public class GraphRenderer {
         gc.strokeLine(w / 2 + logic.getOffsetX(), 0, w / 2 + logic.getOffsetX(), h);
 
         Color[] colors = {Color.web("#ff6b6b"), Color.web("#4da6ff"), Color.web("#7bffb2"), Color.web("#ffb86b"), Color.web("#c087ff")};
-        double hoverRadius = 8;
+        double hoverRadius = 15;
 
         List<double[]> intersections = new ArrayList<>();
         List<List<double[]>> functionPoints = new ArrayList<>();
@@ -285,7 +285,20 @@ public class GraphRenderer {
             for (int k = 1; k < pts.size(); k++) {
                 double[] p1 = pts.get(k - 1);
                 double[] p2 = pts.get(k);
-                gc.strokeLine(p1[0], p1[1], p2[0], p2[1]);
+                
+                // Skip drawing if there's a discontinuity (large jump in y-values)
+                // This prevents vertical lines at asymptotes
+                double dy = Math.abs(p2[3] - p1[3]); // world y difference
+                double dx = Math.abs(p2[2] - p1[2]); // world x difference
+                
+                // If the y-change is much larger than expected for the x-change, it's likely a discontinuity
+                // Use a threshold based on the visible range and scale
+                double visibleHeight = h / logic.getScale();
+                double threshold = visibleHeight * 0.5; // Skip if jump is more than 50% of visible height
+                
+                if (dy < threshold || dx < 1e-9) {
+                    gc.strokeLine(p1[0], p1[1], p2[0], p2[1]);
+                }
             }
 
             gc.setLineDashes(null);

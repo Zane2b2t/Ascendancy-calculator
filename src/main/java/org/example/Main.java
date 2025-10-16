@@ -112,6 +112,13 @@ public class Main {
             } catch (Exception e) {
                 System.out.println("Error: Invalid input! Type 'help' to see usage and examples.");
             }
+
+            try {
+                Thread.sleep(47);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+
         }
 
         if (GraphPlotter.isAppLaunched()) {

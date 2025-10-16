@@ -12,13 +12,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class GraphRenderer {
+    private static final Color[] COLORS = {Color.web("#ff6b6b"), Color.web("#4da6ff"), Color.web("#7bffb2"), Color.web("#ffb86b"), Color.web("#c087ff")};
+    private static final double HOVER_RADIUS = 15;
+    private static final double DISCONTINUITY_THRESHOLD = 0.5;
 
     private final GraphLogic logic;
     private final GraphThemeManager themeManager;
-
-    private double mouseX = -1;
-    private double mouseY = -1;
-
+    private double mouseX = -1, mouseY = -1;
     private volatile String previewExpr = "";
     private volatile int previewReplaceIndex = -1;
 
@@ -27,26 +27,11 @@ public class GraphRenderer {
         this.themeManager = themeManager;
     }
 
-    public void setMousePosition(double x, double y) {
-        this.mouseX = x;
-        this.mouseY = y;
-    }
-
-    public void setPreviewExpr(String expr) {
-        this.previewExpr = expr;
-    }
-
-    public void setPreviewReplaceIndex(int index) {
-        this.previewReplaceIndex = index;
-    }
-
-    public String getPreviewExpr() {
-        return previewExpr;
-    }
-
-    public int getPreviewReplaceIndex() {
-        return previewReplaceIndex;
-    }
+    public void setMousePosition(double x, double y) { this.mouseX = x; this.mouseY = y; }
+    public void setPreviewExpr(String expr) { this.previewExpr = expr; }
+    public void setPreviewReplaceIndex(int index) { this.previewReplaceIndex = index; }
+    public String getPreviewExpr() { return previewExpr; }
+    public int getPreviewReplaceIndex() { return previewReplaceIndex; }
 
     public void redraw(GraphicsContext gc, Canvas canvas, List<String> functions) {
         double w = canvas.getWidth();
@@ -104,95 +89,23 @@ public class GraphRenderer {
         gc.strokeLine(0, h / 2 + logic.getOffsetY(), w, h / 2 + logic.getOffsetY());
         gc.strokeLine(w / 2 + logic.getOffsetX(), 0, w / 2 + logic.getOffsetX(), h);
 
-        Color[] colors = {Color.web("#ff6b6b"), Color.web("#4da6ff"), Color.web("#7bffb2"), Color.web("#ffb86b"), Color.web("#c087ff")};
-        double hoverRadius = 15;
-
         List<double[]> intersections = new ArrayList<>();
         List<List<double[]>> functionPoints = new ArrayList<>();
-        List<Double> verticalLines = new ArrayList<>(); // world x positions for vertical lines
+        List<Double> verticalLines = new ArrayList<>();
+        double threshold = (h / logic.getScale()) * DISCONTINUITY_THRESHOLD;
 
-        // Calculate function points and collect vertical lines for equation inputs
+        // Process functions
         for (int fi = 0; fi < functions.size(); fi++) {
-            String exprString = functions.get(fi);
-            if (previewReplaceIndex == fi && previewExpr != null && !previewExpr.isEmpty()) {
-                exprString = previewExpr;
-            }
-
-            // If the input contains an '=', treat it as an equation and draw x = roots
-            if (exprString.contains("=")) {
-                int before = verticalLines.size();
-                handleEquation(exprString, verticalLines, w, h);
-                int after = verticalLines.size();
-                // For any new root found, add a vertical polyline (two points across the viewport)
-                for (int ri = before; ri < after; ri++) {
-                    double vx = verticalLines.get(ri);
-                    List<double[]> vpts = new ArrayList<>();
-                    // Use visible world bounds for hover data but clamp drawing to canvas [0,h]
-                    double worldYMin = (-h / 2 - logic.getOffsetY()) / logic.getScale();
-                    double worldYMax = (h / 2 - logic.getOffsetY()) / logic.getScale();
-                    double screenX = w / 2 + vx * logic.getScale() + logic.getOffsetX();
-                    double screenYTop = 0;           // clamp to top edge
-                    double screenYBottom = h;
-                    vpts.add(new double[]{screenX, screenYTop, vx, worldYMax});
-                    vpts.add(new double[]{screenX, screenYBottom, vx, worldYMin});
-                    functionPoints.add(vpts);
-                }
-                continue;
-            }
-
-            List<double[]> pts = new ArrayList<>();
-            try {
-                Expression expr = new ExpressionBuilder(exprString).variable("x").build();
-
-                for (double px = -w / 2 - overscan; px < w / 2 + overscan; px += pxStep) {
-                    double x = (px - logic.getOffsetX()) / logic.getScale();
-                    double y = expr.setVariable("x", x).evaluate();
-
-                    double screenX = w / 2 + x * logic.getScale() + logic.getOffsetX();
-                    double screenY = h / 2 - y * logic.getScale() + logic.getOffsetY();
-
-                    pts.add(new double[]{screenX, screenY, x, y});
-                }
-            } catch (Exception ignored) {
-            }
-            functionPoints.add(pts);
+            String expr = (previewReplaceIndex == fi && !previewExpr.isEmpty()) ? previewExpr : functions.get(fi);
+            processExpression(expr, functionPoints, verticalLines, w, h, overscan, pxStep, threshold);
         }
+
         // Handle standalone preview
         boolean drewStandalonePreview = false;
-        if ((previewExpr != null && !previewExpr.isEmpty()) && previewReplaceIndex < 0) {
-            List<double[]> pts = new ArrayList<>();
-            try {
-                if (previewExpr.contains("=")) {
-                    int before = verticalLines.size();
-                    handleEquation(previewExpr, verticalLines, w, h);
-                    int after = verticalLines.size();
-                    for (int ri = before; ri < after; ri++) {
-                        double vx = verticalLines.get(ri);
-                        List<double[]> vpts = new ArrayList<>();
-                        // Use visible world bounds for hover data but clamp drawing to canvas [0,h]
-                        double worldYMin = (-h / 2 - logic.getOffsetY()) / logic.getScale();
-                        double worldYMax = (h / 2 - logic.getOffsetY()) / logic.getScale();
-                        double screenX = w / 2 + vx * logic.getScale() + logic.getOffsetX();
-                        double screenYTop = 0;           // clamp to top edge
-                        double screenYBottom = h;        // clamp to bottom edge
-                        vpts.add(new double[]{screenX, screenYTop, vx, worldYMax});
-                        vpts.add(new double[]{screenX, screenYBottom, vx, worldYMin});
-                        functionPoints.add(vpts);
-                    }
-                    // do not mark drewStandalonePreview; we just added as a function-like line
-                } else {
-                    Expression expr = new ExpressionBuilder(previewExpr).variable("x").build();
-                    for (double px = -w / 2 - overscan; px < w / 2 + overscan; px += pxStep) {
-                        double x = (px - logic.getOffsetX()) / logic.getScale();
-                        double y = expr.setVariable("x", x).evaluate();
-                        double screenX = w / 2 + x * logic.getScale() + logic.getOffsetX();
-                        double screenY = h / 2 - y * logic.getScale() + logic.getOffsetY();
-                        pts.add(new double[]{screenX, screenY, x, y});
-                    }
-                    functionPoints.add(pts);
-                    drewStandalonePreview = true;
-                }
-            } catch (Exception ignored) {}
+        if (!previewExpr.isEmpty() && previewReplaceIndex < 0) {
+            int sizeBefore = functionPoints.size();
+            processExpression(previewExpr, functionPoints, verticalLines, w, h, overscan, pxStep, threshold);
+            drewStandalonePreview = functionPoints.size() > sizeBefore;
         }
 
         // Find intersections between functions
@@ -267,215 +180,172 @@ public class GraphRenderer {
 
         // Draw functions
         for (int i = 0; i < functionPoints.size(); i++) {
-            boolean isPreviewStandalone = drewStandalonePreview && i == functionPoints.size() - 1;
-
-            if (isPreviewStandalone) {
-                gc.setLineDashes(8);
-                gc.setGlobalAlpha(0.6);
-                gc.setLineWidth(2);
-                gc.setStroke(Color.gray(0.8));
-            } else {
-                gc.setLineDashes(null);
-                gc.setGlobalAlpha(1.0);
-                gc.setLineWidth(2);
-                gc.setStroke(colors[i % colors.length]);
-            }
-
-            List<double[]> pts = functionPoints.get(i);
-            for (int k = 1; k < pts.size(); k++) {
-                double[] p1 = pts.get(k - 1);
-                double[] p2 = pts.get(k);
-                
-                // Skip drawing if there's a discontinuity (large jump in y-values)
-                // This prevents vertical lines at asymptotes
-                double dy = Math.abs(p2[3] - p1[3]); // world y difference
-                double dx = Math.abs(p2[2] - p1[2]); // world x difference
-                
-                // If the y-change is much larger than expected for the x-change, it's likely a discontinuity
-                // Use a threshold based on the visible range and scale
-                double visibleHeight = h / logic.getScale();
-                double threshold = visibleHeight * 0.5; // Skip if jump is more than 50% of visible height
-                
-                if (dy < threshold || dx < 1e-9) {
-                    gc.strokeLine(p1[0], p1[1], p2[0], p2[1]);
-                }
-            }
-
+            boolean isPreview = drewStandalonePreview && i == functionPoints.size() - 1;
+            setupGraphicsContext(gc, isPreview, i);
+            drawSegments(gc, functionPoints.get(i), threshold);
             gc.setLineDashes(null);
             gc.setGlobalAlpha(1.0);
         }
 
-        // (No separate drawing for vertical lines; they are included in functionPoints and rendered like normal curves)
-
-        // Compute intersections between vertical lines and function curves
-        if (!verticalLines.isEmpty()) {
-            for (Double vx : verticalLines) {
-                for (List<double[]> pts : functionPoints) {
-                    if (pts.size() < 2) continue;
-                    for (int k = 1; k < pts.size(); k++) {
-                        double[] p1 = pts.get(k - 1);
-                        double[] p2 = pts.get(k);
-                        double x1 = p1[2];
-                        double x2 = p2[2];
-                        if ((x1 - vx) * (x2 - vx) <= 0) { // segment crosses or touches x = vx
-                            double t = (Math.abs(x2 - x1) < 1e-9) ? 0.0 : (vx - x1) / (x2 - x1);
-                            t = Math.max(0.0, Math.min(1.0, t));
-                            double worldY = p1[3] * (1 - t) + p2[3] * t;
-                            double screenX = w / 2 + vx * logic.getScale() + logic.getOffsetX();
-                            double screenY = h / 2 - worldY * logic.getScale() + logic.getOffsetY();
-                            intersections.add(new double[]{screenX, screenY, vx, worldY});
-                        }
-                    }
-                }
-                // x-axis intersection at (vx, 0)
-                double screenX = w / 2 + vx * logic.getScale() + logic.getOffsetX();
-                double screenY = h / 2 + logic.getOffsetY();
-                intersections.add(new double[]{screenX, screenY, vx, 0});
-            }
-        }
-
-        // Hover / snap-to points (intersections)
-        for (double[] inter : intersections) {
-            if (Math.hypot(mouseX - inter[0], mouseY - inter[1]) < hoverRadius) {
-                drawHoverPoint(gc, inter[0], inter[1], inter[2], inter[3], axisColor, 
-                    (bgPaint instanceof Color) ? (Color) bgPaint : Color.BLACK);
-                snapped = true;
-                break;
-            }
-        }
-
-        // Hover on curve (including vertical segments)
-        if (!snapped) {
+        // Vertical line intersections
+        for (Double vx : verticalLines) {
             for (List<double[]> pts : functionPoints) {
                 for (int k = 1; k < pts.size(); k++) {
-                    double[] p1 = pts.get(k - 1);
-                    double[] p2 = pts.get(k);
-                    double dx = p2[0] - p1[0];
-                    double dy = p2[1] - p1[1];
-                    if (Math.abs(dx) < 1e-6) {
-                        // vertical segment: check horizontal distance and y range
-                        if (Math.abs(mouseX - p1[0]) < hoverRadius &&
-                                mouseY >= Math.min(p1[1], p2[1]) - hoverRadius &&
-                                mouseY <= Math.max(p1[1], p2[1]) + hoverRadius) {
-                            double worldX = p1[2];
-                            double worldY = (h / 2.0 + logic.getOffsetY() - mouseY) / logic.getScale();
-                            drawHoverPoint(gc, p1[0], mouseY, worldX, worldY, axisColor,
-                                    (bgPaint instanceof Color) ? (Color) bgPaint : Color.BLACK);
-                            return;
-                        }
-                    } else if (mouseX >= Math.min(p1[0], p2[0]) && mouseX <= Math.max(p1[0], p2[0])) {
-                        double t = (mouseX - p1[0]) / (dx + 1e-9);
-                        double lineY = p1[1] + t * dy;
-                        if (Math.abs(mouseY - lineY) < hoverRadius) {
-                            double worldX = p1[2] * (1 - t) + p2[2] * t;
-                            double worldY = p1[3] * (1 - t) + p2[3] * t;
-                            drawHoverPoint(gc, mouseX, lineY, worldX, worldY, axisColor,
-                                    (bgPaint instanceof Color) ? (Color) bgPaint : Color.BLACK);
-                            return;
-                        }
+                    double[] p1 = pts.get(k - 1), p2 = pts.get(k);
+                    if ((p1[2] - vx) * (p2[2] - vx) <= 0) {
+                        double t = Math.abs(p2[2] - p1[2]) < 1e-9 ? 0 : Math.max(0, Math.min(1, (vx - p1[2]) / (p2[2] - p1[2])));
+                        intersections.add(toScreen(vx, p1[3] * (1 - t) + p2[3] * t, w, h));
+                    }
+                }
+            }
+            intersections.add(toScreen(vx, 0, w, h));
+        }
+
+        // Hover detection
+        Color bg = (bgPaint instanceof Color) ? (Color) bgPaint : Color.BLACK;
+        for (double[] inter : intersections) {
+            if (Math.hypot(mouseX - inter[0], mouseY - inter[1]) < HOVER_RADIUS) {
+                drawHoverPoint(gc, inter[0], inter[1], inter[2], inter[3], axisColor, bg);
+                return;
+            }
+        }
+
+        for (List<double[]> pts : functionPoints) {
+            for (int k = 1; k < pts.size(); k++) {
+                double[] p1 = pts.get(k - 1), p2 = pts.get(k);
+                double dx = p2[0] - p1[0], dy = p2[1] - p1[1];
+                if (Math.abs(dx) < 1e-6) {
+                    if (Math.abs(mouseX - p1[0]) < HOVER_RADIUS && mouseY >= Math.min(p1[1], p2[1]) - HOVER_RADIUS && mouseY <= Math.max(p1[1], p2[1]) + HOVER_RADIUS) {
+                        drawHoverPoint(gc, p1[0], mouseY, p1[2], (h / 2 + logic.getOffsetY() - mouseY) / logic.getScale(), axisColor, bg);
+                        return;
+                    }
+                } else if (mouseX >= Math.min(p1[0], p2[0]) && mouseX <= Math.max(p1[0], p2[0])) {
+                    double t = (mouseX - p1[0]) / dx;
+                    double lineY = p1[1] + t * dy;
+                    if (Math.abs(mouseY - lineY) < HOVER_RADIUS) {
+                        drawHoverPoint(gc, mouseX, lineY, p1[2] * (1 - t) + p2[2] * t, p1[3] * (1 - t) + p2[3] * t, axisColor, bg);
+                        return;
                     }
                 }
             }
         }
     }
 
-    private void drawHoverPoint(GraphicsContext gc, double screenX, double screenY,
-                                double worldX, double worldY, Color textColor, Color bg) {
-        gc.setFill(textColor);
-        gc.fillOval(screenX - 4, screenY - 4, 8, 8);
-
-        String label = String.format("(%.2f, %.2f)", worldX, worldY);
-        double padding = 4;
-
-        Text textNode = new Text(label);
-        textNode.setFont(gc.getFont());
-        double textWidth = textNode.getLayoutBounds().getWidth();
-        double textHeight = textNode.getLayoutBounds().getHeight();
-
-        gc.setFill(bg.deriveColor(0, 1, 1, 0.8));
-        gc.fillRect(screenX + 8, screenY - textHeight,
-                textWidth + padding * 2, textHeight + padding);
-
-        gc.setFill(textColor);
-        gc.fillText(label, screenX + 8 + padding, screenY - 2);
+    private void processExpression(String expr, List<List<double[]>> functionPoints, List<Double> verticalLines, 
+                                   double w, double h, double overscan, int pxStep, double threshold) {
+        if (expr.contains("=")) {
+            int before = verticalLines.size();
+            handleEquation(expr, verticalLines, w, h);
+            for (int i = before; i < verticalLines.size(); i++) {
+                double vx = verticalLines.get(i);
+                double worldYMin = (-h / 2 - logic.getOffsetY()) / logic.getScale();
+                double worldYMax = (h / 2 - logic.getOffsetY()) / logic.getScale();
+                double screenX = w / 2 + vx * logic.getScale() + logic.getOffsetX();
+                List<double[]> vpts = new ArrayList<>();
+                vpts.add(new double[]{screenX, 0, vx, worldYMax});
+                vpts.add(new double[]{screenX, h, vx, worldYMin});
+                functionPoints.add(vpts);
+            }
+        } else {
+            try {
+                Expression expression = new ExpressionBuilder(expr).variable("x").build();
+                List<double[]> pts = new ArrayList<>();
+                for (double px = -w / 2 - overscan; px < w / 2 + overscan; px += pxStep) {
+                    double x = (px - logic.getOffsetX()) / logic.getScale();
+                    double y = expression.setVariable("x", x).evaluate();
+                    if (Double.isFinite(y)) {
+                        pts.add(new double[]{w / 2 + x * logic.getScale() + logic.getOffsetX(), 
+                                             h / 2 - y * logic.getScale() + logic.getOffsetY(), x, y});
+                    }
+                }
+                if (!pts.isEmpty()) functionPoints.add(pts);
+            } catch (Exception ignored) {}
+        }
     }
 
-    // Parse an equation string like "2x+5 = 10" and append x-roots (world coordinates) to verticalLines.
-    // If the equation is of form "x = c" or "c = x", add c directly. Otherwise solve left(x) - right(x) = 0
-    // by scanning over the visible x-range and detecting sign changes with lerp
+    private void setupGraphicsContext(GraphicsContext gc, boolean isPreview, int index) {
+        if (isPreview) {
+            gc.setLineDashes(8);
+            gc.setGlobalAlpha(0.6);
+            gc.setStroke(Color.gray(0.8));
+        } else {
+            gc.setLineDashes(null);
+            gc.setGlobalAlpha(1.0);
+            gc.setStroke(COLORS[index % COLORS.length]);
+        }
+        gc.setLineWidth(2);
+    }
+
+    private void drawSegments(GraphicsContext gc, List<double[]> pts, double threshold) {
+        for (int k = 1; k < pts.size(); k++) {
+            double[] p1 = pts.get(k - 1), p2 = pts.get(k);
+            if (Math.abs(p2[3] - p1[3]) < threshold || Math.abs(p2[2] - p1[2]) < 1e-9) {
+                gc.strokeLine(p1[0], p1[1], p2[0], p2[1]);
+            }
+        }
+    }
+
+    private double[] toScreen(double worldX, double worldY, double w, double h) {
+        return new double[]{
+            w / 2 + worldX * logic.getScale() + logic.getOffsetX(),
+            h / 2 - worldY * logic.getScale() + logic.getOffsetY(),
+            worldX, worldY
+        };
+    }
+
+    private void drawHoverPoint(GraphicsContext gc, double screenX, double screenY, double worldX, double worldY, Color textColor, Color bg) {
+        gc.setFill(textColor);
+        gc.fillOval(screenX - 4, screenY - 4, 8, 8);
+        String label = String.format("(%.2f, %.2f)", worldX, worldY);
+        Text textNode = new Text(label);
+        textNode.setFont(gc.getFont());
+        double tw = textNode.getLayoutBounds().getWidth(), th = textNode.getLayoutBounds().getHeight();
+        gc.setFill(bg.deriveColor(0, 1, 1, 0.8));
+        gc.fillRect(screenX + 8, screenY - th, tw + 8, th + 4);
+        gc.setFill(textColor);
+        gc.fillText(label, screenX + 12, screenY - 2);
+    }
+
     private void handleEquation(String equation, List<Double> verticalLines, double w, double h) {
         if (equation == null) return;
         String eq = equation.replaceAll("\\s+", "");
         int idx = eq.indexOf('=');
         if (idx <= 0 || idx >= eq.length() - 1) return;
 
-        String left = eq.substring(0, idx);
-        String right = eq.substring(idx + 1);
+        String left = eq.substring(0, idx), right = eq.substring(idx + 1);
 
-        // Direct x = constant handling
         try {
-            if (left.equals("x")) {
-                double c = new ExpressionBuilder(right).build().evaluate();
-                addUnique(verticalLines, c);
-                return;
-            }
-            if (right.equals("x")) {
-                double c = new ExpressionBuilder(left).build().evaluate();
-                addUnique(verticalLines, c);
-                return;
-            }
+            if (left.equals("x")) { addUnique(verticalLines, new ExpressionBuilder(right).build().evaluate()); return; }
+            if (right.equals("x")) { addUnique(verticalLines, new ExpressionBuilder(left).build().evaluate()); return; }
         } catch (Exception ignored) {}
 
-        // General case: solve F(x) = left(x) - right(x) = 0 via sign changes across the current viewport
-        Expression lExpr;
-        Expression rExpr;
         try {
-            lExpr = new ExpressionBuilder(left).variable("x").build();
-            rExpr = new ExpressionBuilder(right).variable("x").build();
-        } catch (Exception e) {
-            return;
-        }
+            Expression lExpr = new ExpressionBuilder(left).variable("x").build();
+            Expression rExpr = new ExpressionBuilder(right).variable("x").build();
+            double worldXMin = (-w / 2 - logic.getOffsetX()) / logic.getScale();
+            double worldXMax = (w / 2 - logic.getOffsetX()) / logic.getScale();
+            if (worldXMin > worldXMax) { double tmp = worldXMin; worldXMin = worldXMax; worldXMax = tmp; }
+            double step = Math.max(1.0 / logic.getScale(), 1e-3);
+            double prevX = worldXMin, prevF = evalDiff(lExpr, rExpr, prevX);
 
-        // Determine visible world x-range
-        double worldXMin = (-w / 2 - logic.getOffsetX()) / logic.getScale();
-        double worldXMax = (w / 2 - logic.getOffsetX()) / logic.getScale();
-        if (worldXMin > worldXMax) {
-            double tmp = worldXMin; worldXMin = worldXMax; worldXMax = tmp;
-        }
-
-        // Step in world units so that we get approx 1px in screen units
-        double step = 1.0 / logic.getScale();
-        step = Math.max(step, 1e-3); // avoid too tiny steps when highly zoomed in
-
-        double prevX = worldXMin;
-        double prevF;
-        try { prevF = lExpr.setVariable("x", prevX).evaluate() - rExpr.setVariable("x", prevX).evaluate(); }
-        catch (Exception e) { prevF = Double.NaN; }
-
-        for (double x = worldXMin + step; x <= worldXMax; x += step) {
-            double f;
-            try { f = lExpr.setVariable("x", x).evaluate() - rExpr.setVariable("x", x).evaluate(); }
-            catch (Exception e) { prevX = x; prevF = f = Double.NaN; continue; }
-
-            if (!Double.isNaN(prevF) && !Double.isNaN(f)) {
-                // Exact zero
-                if (Math.abs(f) < 1e-9) {
-                    addUnique(verticalLines, x);
-                } else if (prevF * f < 0) {
-                    // Linear interpolation between prevX and x
-                    double t = Math.abs(prevF) / (Math.abs(prevF) + Math.abs(f));
-                    double root = prevX * (1 - t) + x * t;
-                    addUnique(verticalLines, root);
+            for (double x = worldXMin + step; x <= worldXMax; x += step) {
+                double f = evalDiff(lExpr, rExpr, x);
+                if (!Double.isNaN(prevF) && !Double.isNaN(f)) {
+                    if (Math.abs(f) < 1e-9) addUnique(verticalLines, x);
+                    else if (prevF * f < 0) addUnique(verticalLines, prevX + (Math.abs(prevF) / (Math.abs(prevF) + Math.abs(f))) * (x - prevX));
                 }
+                prevX = x; prevF = f;
             }
-            prevX = x; prevF = f;
-        }
+        } catch (Exception ignored) {}
+    }
+
+    private double evalDiff(Expression lExpr, Expression rExpr, double x) {
+        try { return lExpr.setVariable("x", x).evaluate() - rExpr.setVariable("x", x).evaluate(); }
+        catch (Exception e) { return Double.NaN; }
     }
 
     private void addUnique(List<Double> xs, double x) {
-        for (Double v : xs) {
-            if (Math.abs(v - x) < 1e-4) return;
-        }
+        for (Double v : xs) if (Math.abs(v - x) < 1e-4) return;
         xs.add(x);
     }
 }

@@ -244,6 +244,7 @@ public class Functions {
                     " - 3+4/2\n" +
                     " - f(x) = x^2 + 2x + 1   (then type 'wasd')\n" +
                     " - 2x + 5 = 11   (shows solutions to x)\n" +
+                    " - you can also add restrictions like: e^x where x>=-1 and x<=1  or  2x where 0<x and x<6  or 2x where 0<x<6\n" +
                     " - system               (then enter number of equations and each equation)\n"
             );
         }

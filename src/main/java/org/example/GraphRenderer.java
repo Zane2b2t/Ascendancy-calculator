@@ -7,6 +7,7 @@ import javafx.scene.paint.Paint;
 import javafx.scene.text.Text;
 import net.objecthunter.exp4j.Expression;
 import net.objecthunter.exp4j.ExpressionBuilder;
+import org.example.math.Functions;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -233,9 +234,12 @@ public class GraphRenderer {
 
     private void processExpression(String expr, List<List<double[]>> functionPoints, List<Double> verticalLines, 
                                    double w, double h, double overscan, int pxStep, double threshold) {
-        if (expr.contains("=")) {
+        // Determine if this is an explicit equation (x=..., f(x)=g(x)) only if '=' appears before any 'where'
+        String[] whereSplitForEq = expr.split("(?i)\\bwhere\\b", 2);
+        boolean isEquation = whereSplitForEq[0].contains("=");
+        if (isEquation) {
             int before = verticalLines.size();
-            handleEquation(expr, verticalLines, w, h);
+            handleEquation(whereSplitForEq[0], verticalLines, w, h);
             for (int i = before; i < verticalLines.size(); i++) {
                 double vx = verticalLines.get(i);
                 double worldYMin = (-h / 2 - logic.getOffsetY()) / logic.getScale();
@@ -248,19 +252,181 @@ public class GraphRenderer {
             }
         } else {
             try {
-                Expression expression = new ExpressionBuilder(expr).variable("x").build();
+                // Support for domain restrictions via "where" clause
+                String[] parts = expr.split("(?i)\\bwhere\\b", 2);
+                String baseExpr = parts[0].trim();
+                baseExpr = Functions.fixImplicitMultiplication(baseExpr);
+
+                List<Condition> conditions = new ArrayList<>();
+                if (parts.length == 2) {
+                    String condStr = parts[1].trim();
+                    conditions = parseConditions(condStr);
+                }
+
+                Expression expression = new ExpressionBuilder(baseExpr)
+                        .variables("x", "pi", "e")
+                        .build();
+                expression.setVariable("pi", Math.PI).setVariable("e", Math.E);
                 List<double[]> pts = new ArrayList<>();
                 for (double px = -w / 2 - overscan; px < w / 2 + overscan; px += pxStep) {
                     double x = (px - logic.getOffsetX()) / logic.getScale();
+
+                    if (!conditions.isEmpty() && !conditionsSatisfied(conditions, x)) {
+                        continue; // skip points outside the domain restrictions
+                    }
+
                     double y = expression.setVariable("x", x).evaluate();
                     if (Double.isFinite(y)) {
-                        pts.add(new double[]{w / 2 + x * logic.getScale() + logic.getOffsetX(), 
+                        pts.add(new double[]{w / 2 + x * logic.getScale() + logic.getOffsetX(),
                                              h / 2 - y * logic.getScale() + logic.getOffsetY(), x, y});
                     }
                 }
                 if (!pts.isEmpty()) functionPoints.add(pts);
             } catch (Exception ignored) {}
         }
+    }
+
+
+    private static class Condition {
+        final String op; // one of <, <=, >, >=, ==, =, !=
+        final Expression left;
+        final Expression right;
+
+        Condition(String op, Expression left, Expression right) {
+            this.op = op; this.left = left; this.right = right;
+        }
+
+        boolean test(double x, double tol) {
+            try {
+                double l = left.setVariable("x", x).evaluate();
+                double r = right.setVariable("x", x).evaluate();
+                return switch (op) {
+                    case "<" -> l < r;
+                    case "<=" -> l <= r;
+                    case ">" -> l > r;
+                    case ">=" -> l >= r;
+                    // Use pixel-scale tolerance so single-point exclusions are visible
+                    case "!=" -> Math.abs(l - r) > tol;
+                    case "==", "=" -> Math.abs(l - r) <= tol;
+                    default -> true;
+                };
+            } catch (Exception e) {
+                return false;
+            }
+        }
+    }
+
+    private boolean conditionsSatisfied(List<Condition> conditions, double x) {
+        double tol = 2.0 / Math.max(1.0, logic.getScale()); // ~2 pixels in world units
+        for (Condition c : conditions) if (!c.test(x, tol)) return false;
+        return true;
+    }
+
+    private List<Condition> parseConditions(String condStr) {
+        String s = condStr
+                .replace('\u2264', '<')
+                .replace('\u2265', '>')
+                .replaceAll("≤", "<=")
+                .replaceAll("≥", ">=")
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        List<Condition> list = new ArrayList<>();
+
+        // Split by "and" (case-insensitive)
+        String[] andParts = s.split("(?i)\\band\\b");
+        for (String raw : andParts) {
+            String c = raw.trim();
+            if (c.isEmpty()) continue;
+
+            // --- Handle chained inequalities like "0<x<5" or "0 < x < 5"
+            if (c.matches(".*[<>]=?.*x.*[<>]=?.*")) {
+                c = c.replaceAll("([<>]=?)", " $1 ")
+                        .replaceAll("\\s+", " ")
+                        .trim();
+
+                String[] parts = c.split("\\s+");
+                int xIndex = -1;
+                for (int i = 0; i < parts.length; i++) {
+                    if (parts[i].equalsIgnoreCase("x")) { xIndex = i; break; }
+                }
+
+                if (xIndex > 0 && xIndex < parts.length - 1) {
+                    // Left side: "0 < x"
+                    if (xIndex >= 2) {
+                        addSimpleCondition(list, parts[xIndex - 2], parts[xIndex - 1], "x");
+                    }
+                    // Right side: "x < 6"
+                    if (xIndex + 2 < parts.length) {
+                        addSimpleCondition(list, "x", parts[xIndex + 1], parts[xIndex + 2]);
+                    }
+                }
+
+                continue;
+            }
+
+            String[] ops = {"<=", ">=", "!=", "==", "=", "<", ">"};
+            int pos = -1;
+            String opFound = null;
+            for (String op : ops) {
+                pos = indexOfOp(c, op);
+                if (pos >= 0) {
+                    opFound = op;
+                    break;
+                }
+            }
+
+            if (opFound != null) {
+                String left = c.substring(0, pos).trim();
+                String right = c.substring(pos + opFound.length()).trim();
+
+                if (left.isEmpty()) left = "x";
+                if (right.isEmpty()) right = "x";
+
+                addSimpleCondition(list, left, opFound, right);
+            }
+        }
+
+        return list;
+    }
+
+
+
+    private void addSimpleCondition(List<Condition> out, String left, String op, String right) {
+        try {
+            String l = Functions.fixImplicitMultiplication(left);
+            String r = Functions.fixImplicitMultiplication(right);
+            Expression lExpr = new ExpressionBuilder(l).variables("x", "pi", "e").build();
+            Expression rExpr = new ExpressionBuilder(r).variables("x", "pi", "e").build();
+            lExpr.setVariable("pi", Math.PI).setVariable("e", Math.E);
+            rExpr.setVariable("pi", Math.PI).setVariable("e", Math.E);
+            out.add(new Condition(op, lExpr, rExpr));
+        } catch (Exception ignored) {}
+    }
+
+    private int indexOf(String[] arr, int ordinalTokenIndex) {
+        return Math.min(Math.max(ordinalTokenIndex, 0), arr.length - 1);
+    }
+
+    private String join(String[] arr, int start, int end) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = start; i < end; i++) {
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(arr[i]);
+        }
+        return sb.toString();
+    }
+
+    private int indexOfOp(String s, String op) {
+        // find operator outside of parentheses
+        int depth = 0;
+        for (int i = 0; i <= s.length() - op.length(); i++) {
+            char ch = s.charAt(i);
+            if (ch == '(') depth++;
+            else if (ch == ')') depth = Math.max(0, depth - 1);
+            if (depth == 0 && s.startsWith(op, i)) return i;
+        }
+        return -1;
     }
 
     private void setupGraphicsContext(GraphicsContext gc, boolean isPreview, int index) {

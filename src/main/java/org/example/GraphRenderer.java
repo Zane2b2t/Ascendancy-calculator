@@ -38,7 +38,7 @@ public class GraphRenderer {
     public void redraw(GraphicsContext gc, Canvas canvas, List<String> functions) {
         double w = canvas.getWidth();
         double h = canvas.getHeight();
-        double overscan = 2; // pixels
+        double overscan = 2; // extra pixels sampled around the edges
 
         Paint bgPaint = themeManager.getBackgroundPaint();
         Color gridColor = themeManager.getGridColor();
@@ -57,7 +57,7 @@ public class GraphRenderer {
         gc.setStroke(gridColor);
         gc.setLineWidth(1);
 
-        // Draw vertical grid lines (with overscan)
+        // vertical grid lines
         for (double worldX = Math.floor((-w / 2 - overscan - logic.getOffsetX()) / logic.getScale() / step) * step;
              worldX * logic.getScale() + w / 2 + logic.getOffsetX() < w + overscan;
              worldX += step) {
@@ -71,7 +71,7 @@ public class GraphRenderer {
             }
         }
 
-        // Draw horizontal grid lines (with overscan)
+        // horizontal grid lines
         for (double worldY = Math.floor((-h / 2 - overscan - logic.getOffsetY()) / logic.getScale() / step) * step;
              worldY * logic.getScale() + h / 2 + logic.getOffsetY() < h + overscan;
              worldY += step) {
@@ -85,7 +85,7 @@ public class GraphRenderer {
             }
         }
 
-        // Draw axes
+        // axes
         gc.setStroke(axisColor);
         gc.setLineWidth(2);
         gc.strokeLine(0, h / 2 + logic.getOffsetY(), w, h / 2 + logic.getOffsetY());
@@ -96,13 +96,13 @@ public class GraphRenderer {
         List<Double> verticalLines = new ArrayList<>();
         double threshold = (h / logic.getScale()) * DISCONTINUITY_THRESHOLD;
 
-        // Process functions
+        // evaluate each function string
         for (int fi = 0; fi < functions.size(); fi++) {
             String expr = (previewReplaceIndex == fi && !previewExpr.isEmpty()) ? previewExpr : functions.get(fi);
             processExpression(expr, functionPoints, verticalLines, w, h, overscan, pxStep, threshold);
         }
 
-        // Handle standalone preview
+        // standalone preview (not replacing any existing function)
         boolean drewStandalonePreview = false;
         if (!previewExpr.isEmpty() && previewReplaceIndex < 0) {
             int sizeBefore = functionPoints.size();
@@ -110,7 +110,7 @@ public class GraphRenderer {
             drewStandalonePreview = functionPoints.size() > sizeBefore;
         }
 
-        // Find intersections between functions
+        // find intersections between plotted functions
         for (int i = 0; i < functionPoints.size(); i++) {
             for (int j = i + 1; j < functionPoints.size(); j++) {
                 List<double[]> f1 = functionPoints.get(i);
@@ -134,13 +134,13 @@ public class GraphRenderer {
             }
         }
 
-        // Find axis intersections and extrema
+        // axis intersections & extrema
         for (List<double[]> pts : functionPoints) {
             for (int k = 1; k < pts.size(); k++) {
                 double[] p1 = pts.get(k - 1);
                 double[] p2 = pts.get(k);
 
-                // y = 0
+                // y = 0 crossing
                 if (p1[3] * p2[3] < 0) {
                     double t = p1[3] / (p1[3] - p2[3]);
                     double x = p1[2] + t * (p2[2] - p1[2]);
@@ -149,7 +149,7 @@ public class GraphRenderer {
                     intersections.add(new double[]{screenX, screenY, x, 0});
                 }
 
-                // x = 0
+                // x = 0 crossing
                 if (p1[2] * p2[2] < 0) {
                     double t = p1[2] / (p1[2] - p2[2]);
                     double y = p1[3] + t * (p2[3] - p1[3]);
@@ -158,7 +158,7 @@ public class GraphRenderer {
                     intersections.add(new double[]{screenX, screenY, 0, y});
                 }
 
-                // Extrema (slope sign change)
+                // extrema (slope sign change)
                 if (k > 1) {
                     double slopePrev = pts.get(k - 1)[3] - pts.get(k - 2)[3];
                     double slopeCurr = p2[3] - p1[3];
@@ -173,14 +173,12 @@ public class GraphRenderer {
             }
         }
 
-        // Origin (0,0)
+        // origin
         double originX = w / 2 + logic.getOffsetX();
         double originY = h / 2 + logic.getOffsetY();
         intersections.add(new double[]{originX, originY, 0, 0});
 
-        boolean snapped = false;
-
-        // Draw functions
+        // draw functions
         for (int i = 0; i < functionPoints.size(); i++) {
             boolean isPreview = drewStandalonePreview && i == functionPoints.size() - 1;
             setupGraphicsContext(gc, isPreview, i);
@@ -189,7 +187,7 @@ public class GraphRenderer {
             gc.setGlobalAlpha(1.0);
         }
 
-        // Vertical line intersections
+        // vertical line intersections (from equations like x = a)
         for (Double vx : verticalLines) {
             for (List<double[]> pts : functionPoints) {
                 for (int k = 1; k < pts.size(); k++) {
@@ -203,7 +201,7 @@ public class GraphRenderer {
             intersections.add(toScreen(vx, 0, w, h));
         }
 
-        // Hover detection
+        // hover detection
         Color bg = (bgPaint instanceof Color) ? (Color) bgPaint : Color.BLACK;
         for (double[] inter : intersections) {
             if (Math.hypot(mouseX - inter[0], mouseY - inter[1]) < HOVER_RADIUS) {
@@ -235,7 +233,7 @@ public class GraphRenderer {
 
     private void processExpression(String expr, List<List<double[]>> functionPoints, List<Double> verticalLines,
                                    double w, double h, double overscan, int pxStep, double threshold) {
-        // Determine if this is an explicit equation (x=..., f(x)=g(x)) only if '=' appears before any 'where'
+        // treat strings with a 'where' clause as functions with domain restrictions
         String[] whereSplitForEq = expr.split("(?i)\\bwhere\\b", 2);
         boolean isEquation = whereSplitForEq[0].contains("=");
         if (isEquation) {
@@ -253,7 +251,6 @@ public class GraphRenderer {
             }
         } else {
             try {
-                // Support for domain restrictions via "where" clause
                 String[] parts = expr.split("(?i)\\bwhere\\b", 2);
                 String baseExpr = parts[0].trim();
                 baseExpr = Functions.fixImplicitMultiplication(baseExpr);
@@ -273,7 +270,7 @@ public class GraphRenderer {
                     double x = (px - logic.getOffsetX()) / logic.getScale();
 
                     if (rootCondition != null && !rootCondition.test(x, 2.0 / Math.max(1.0, logic.getScale()))) {
-                        continue; // skip points outside the domain restrictions
+                        continue; // skip points outside domain
                     }
 
                     double y = expression.setVariable("x", x).evaluate();
@@ -287,7 +284,9 @@ public class GraphRenderer {
         }
     }
 
-    // --- New condition system: supports comparisons, chained inequalities, interval notation, set exclusion (R - {..}), 'in'/'belong_to', and logical AND/OR/NOT (with parentheses). ---
+    // Clarification: the condition parser below evaluates domain strings such as
+    // "x in [1,5)", "0 < x < pi", "R - {5,10}", and combinations using and/or/not.
+    // Comments nearby explain the tricky parts (bracket depth tracking, chained inequalities, intervals, set exclusion).
     private interface Condition {
         boolean test(double x, double tol);
     }
@@ -359,7 +358,7 @@ public class GraphRenderer {
                 .replaceAll("\\s+", " ")
                 .trim();
 
-        // Top-level OR split
+        // split top-level OR (ignores tokens inside parentheses/brackets)
         List<String> orParts = splitTopLevel(normalized, "(?i)\\bor\\b");
         if (orParts.size() > 1) {
             List<Condition> children = new ArrayList<>();
@@ -367,7 +366,7 @@ public class GraphRenderer {
             return new CompositeCondition(false, children);
         }
 
-        // Top-level AND split
+        // split top-level AND
         List<String> andParts = splitTopLevel(normalized, "(?i)\\band\\b");
         if (andParts.size() > 1) {
             List<Condition> children = new ArrayList<>();
@@ -379,22 +378,22 @@ public class GraphRenderer {
         if (t.startsWith("not ") || t.startsWith("!")) {
             String sub = t.replaceFirst("(?i)not\\s+|!", "").trim();
             Condition c = parseConditionExpression(sub);
-            // not A == (R - A) but easier: wrap into AND of "x in R" and exclude A
-            return new CompositeCondition(true, Arrays.asList(new Condition() { public boolean test(double x, double tol) { return !c.test(x, tol); } }));
+            // simple negation wrapper
+            return new Condition() { public boolean test(double x, double tol) { return !c.test(x, tol); } };
         }
 
-        // Parentheses
+        // strip outer parentheses immediately
         if (t.startsWith("(") && t.endsWith(")")) {
             return parseConditionExpression(t.substring(1, t.length() - 1));
         }
 
-        // Interval notation: [a,b], (a,b], [a,inf), [5,infinity[, etc.
+        // quick check for interval-like syntax; we parse it manually below
         String intervalRegex = "^([\\[\\(])\\s*([^,]+)\\s*,\\s*([^\\]\\)\\[]+)\\s*([\\]\\)\\[])$";
         if (t.matches(intervalRegex) || t.matches("^([\\[\\(])\\s*([^,]+)\\s*,\\s*([^\\]\\)]+)\\s*([\\]\\)\\[])") ) {
-            // The above second pattern is forgiving; we'll do simpler matching manually
+            // fall through to manual parsing
         }
 
-        // Try manual interval parse
+        // manual interval parse: [a,b], (a,b], etc.
         if (t.length() >= 2 && (t.charAt(0) == '[' || t.charAt(0) == '(') && (t.contains(","))) {
             char left = t.charAt(0);
             char right = t.charAt(t.length() - 1);
@@ -405,44 +404,86 @@ public class GraphRenderer {
                 double lo = parseBoundValue(leftVal, true);
                 double hi = parseBoundValue(rightVal, false);
                 boolean loInc = left == '[';
-                boolean hiInc = (right == ']'); // treat ']' as inclusive, anything else exclusive
+                boolean hiInc = (right == ']'); // ']' inclusive; anything else -> exclusive
+
+                // auto-swap reversed bounds so [50,10) -> [10,50)
+                if (!Double.isInfinite(lo) && !Double.isInfinite(hi) && lo > hi) {
+                    double tmp = lo; lo = hi; hi = tmp;
+                    boolean tmpInc = loInc; loInc = hiInc; hiInc = tmpInc;
+                }
+
                 return new IntervalCondition(lo, loInc, hi, hiInc);
             }
         }
 
-        // 'in' or 'belong_to' style: x in [a,b) or x belong_to (5,10]
+        // x in [a,b) or x belong_to (...) style: forward to interval parser
         String inRegex = "(?i)^(x)\\s*(?:in|∈|belong_to|belongs_to|belongs to)\\s*(.+)$";
         if (t.matches(inRegex)) {
             String rhs = t.replaceFirst("(?i)^(x)\\s*(?:in|∈|belong_to|belongs_to|belongs to)\\s*", "");
             rhs = rhs.trim();
-            // If rhs is interval, reuse parse
             return parseConditionExpression(rhs);
         }
 
-        // Set exclusion like R - {5,10} or R-{5,10}
+        // R - {a,b} style: build an exclusion list
         if (t.matches("(?i)^R\\s*-\\s*\\{.*\\}$")) {
             int l = t.indexOf('{'), r = t.lastIndexOf('}');
             if (l >= 0 && r > l) {
                 String inside = t.substring(l + 1, r).trim();
                 List<Expression> exps = new ArrayList<>();
                 for (String part : inside.split("\\s*,\\s*")) {
-                    try { String fixed = Functions.fixImplicitMultiplication(part);
+                    try {
+                        String fixed = Functions.fixImplicitMultiplication(part);
                         Expression e = new ExpressionBuilder(fixed).variables("x","pi","e").build();
                         e.setVariable("pi", Math.PI).setVariable("e", Math.E);
                         exps.add(e);
                     } catch (Exception ignored) {}
                 }
-                return new CompositeCondition(true, Arrays.asList(new Condition[] { new Condition() { public boolean test(double x, double tol) { // start with all reals then exclude
-                    for (Expression e : exps) try { double v = e.setVariable("x", x).setVariable("pi", Math.PI).setVariable("e", Math.E).evaluate(); if (Math.abs(v - x) <= tol) return false; } catch (Exception ignored) {}
-                    return true; } } } ));
+                return new Condition() {
+                    public boolean test(double x, double tol) {
+                        for (Expression e : exps) {
+                            try {
+                                double v = e.setVariable("x", x).setVariable("pi", Math.PI).setVariable("e", Math.E).evaluate();
+                                if (Math.abs(v - x) <= tol) return false; // excluded
+                            } catch (Exception ignored) {}
+                        }
+                        return true;
+                    }
+                };
             }
         }
 
-        // Set membership: x in {1,2,3}
+        // x in {1,2,3} membership
+        if (t.matches("(?i)^x\\s*(?:in|∈)\\s*\\{.*\\}$")) {
+            int l = t.indexOf('{'), r = t.lastIndexOf('}');
+            if (l >= 0 && r > l) {
+                String inside = t.substring(l + 1, r).trim();
+                List<Expression> members = new ArrayList<>();
+                for (String part : inside.split("\\s*,\\s*")) {
+                    try {
+                        String fixed = Functions.fixImplicitMultiplication(part);
+                        Expression e = new ExpressionBuilder(fixed).variables("x","pi","e").build();
+                        e.setVariable("pi", Math.PI).setVariable("e", Math.E);
+                        members.add(e);
+                    } catch (Exception ignored) {}
+                }
+                return new Condition() {
+                    public boolean test(double x, double tol) {
+                        for (Expression m : members) {
+                            try {
+                                double v = m.setVariable("x", x).setVariable("pi", Math.PI).setVariable("e", Math.E).evaluate();
+                                if (Math.abs(v - x) <= tol) return true;
+                            } catch (Exception ignored) {}
+                        }
+                        return false;
+                    }
+                };
+            }
+        }
+
+        // chained inequalities: 0 < x < 5  -> parsed as 0 < x AND x < 5
         if (t.matches(".*[<>]=?.*\\bx\\b.*[<>]=?.*")) {
-            // make operators and tokens explicit
-            normalized = t.replaceAll("([<>]=?)", " $1 ").replaceAll("\\s+", " ").trim();
-            String[] parts = normalized.split(" ");
+            String normalizedChained = t.replaceAll("([<>]=?)", " $1 ").replaceAll("\\s+", " ").trim();
+            String[] parts = normalizedChained.split(" ");
             int xIndex = -1;
             for (int i = 0; i < parts.length; i++) {
                 if (parts[i].equalsIgnoreCase("x")) { xIndex = i; break; }
@@ -450,7 +491,6 @@ public class GraphRenderer {
             if (xIndex > 0) {
                 List<Condition> children = new ArrayList<>();
                 try {
-                    // left side: e.g. "0 < x" -> parts[xIndex-2] op parts[xIndex-1]
                     if (xIndex >= 2) {
                         String leftVal = parts[xIndex - 2];
                         String leftOp  = parts[xIndex - 1];
@@ -460,7 +500,6 @@ public class GraphRenderer {
                         lExpr.setVariable("pi", Math.PI).setVariable("e", Math.E);
                         children.add(new ComparisonCondition(leftOp, lExpr, rExpr));
                     }
-                    // right side: e.g. "x < 5" -> parts[xIndex+1] op parts[xIndex+2]
                     if (xIndex + 2 < parts.length) {
                         String rightOp  = parts[xIndex + 1];
                         String rightVal = parts[xIndex + 2];
@@ -471,11 +510,11 @@ public class GraphRenderer {
                         children.add(new ComparisonCondition(rightOp, lExpr, rExpr));
                     }
                     if (!children.isEmpty()) return new CompositeCondition(true, children);
-                } catch (Exception ignored) { /* fall through to other handlers */ }
+                } catch (Exception ignored) { /* fall through */ }
             }
         }
 
-        // Simple comparison: try to find operator outside parentheses
+        // simple comparisons (outside parentheses)
         String[] ops = {"<=","=","==","!=",">=","<",">"};
         for (String op : ops) {
             int pos = indexOfOp(t, op);
@@ -493,33 +532,28 @@ public class GraphRenderer {
             }
         }
 
-        // As a last resort, try to parse as single number ("x<0" style handled above) - if it's a raw number, treat as equality to x
+        // number literal -> treat as x == literal
         try {
             double v = Double.parseDouble(t);
             Expression e = new ExpressionBuilder("" + v).build();
             return new ComparisonCondition("==", new ExpressionBuilder("x").variable("x").build(), e);
         } catch (Exception ignored) {}
 
-        // Unknown pattern -> accept everything (safe fallback)
+        // unknown input: accept all (falls back to no restriction)
         return (x, tol) -> true;
-
     }
 
-    // Helper: split a string by a top-level operator regex (not inside parentheses or braces)
+    // splitTopLevel: split by "and"/"or" but ignore these words if they are inside parentheses/brackets.
+    // Example tricky input: "[]( ... ) [23]1[p23][]" — function tracks depth of (), {}, [] and only splits when depth==0.
     private List<String> splitTopLevel(String s, String operatorRegex) {
         List<String> out = new ArrayList<>();
         int depth = 0; int last = 0;
-        String lower = s;
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
             if (c == '(' || c == '{' || c == '[') depth++;
             else if (c == ')' || c == '}' || c == ']') depth = Math.max(0, depth - 1);
             if (depth == 0) {
-                // try to match operator at position i
-                // we'll just check word boundaries for "and"/"or" by simple substring compare
-                // find next space-delimited token
-                // simplistic but effective for common cases
-                // check for " or " and " and " ignoring case
+                // look for the operator as a simple space-delimited token
                 if (s.regionMatches(true, i, " or ", 0, 4) && operatorRegex.equals("(?i)\\bor\\b")) {
                     out.add(s.substring(last, i).trim()); last = i + 4; i += 3; continue;
                 }
@@ -532,6 +566,7 @@ public class GraphRenderer {
         out.add(s.substring(last).trim()); return out;
     }
 
+    // parseBoundValue: accepts numeric literals or expressions (pi, 2*pi, sqrt(2), infinity)
     private double parseBoundValue(String s, boolean allowNegInf) {
         s = s.trim();
         if (s.equalsIgnoreCase("infinity") || s.equalsIgnoreCase("inf") || s.equals("∞")) return Double.POSITIVE_INFINITY;
@@ -541,8 +576,8 @@ public class GraphRenderer {
         }
     }
 
+    // find operator outside parentheses
     private int indexOfOp(String s, String op) {
-        // find operator outside of parentheses
         int depth = 0;
         for (int i = 0; i <= s.length() - op.length(); i++) {
             char ch = s.charAt(i);

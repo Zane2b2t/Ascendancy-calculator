@@ -358,7 +358,7 @@ public class GraphRenderer {
                 .replaceAll("\\s+", " ")
                 .trim();
 
-        // split top-level OR (ignores tokens inside parentheses/brackets)
+        // Top-level OR split
         List<String> orParts = splitTopLevel(normalized, "(?i)\\bor\\b");
         if (orParts.size() > 1) {
             List<Condition> children = new ArrayList<>();
@@ -366,7 +366,7 @@ public class GraphRenderer {
             return new CompositeCondition(false, children);
         }
 
-        // split top-level AND
+        // Top-level AND split
         List<String> andParts = splitTopLevel(normalized, "(?i)\\band\\b");
         if (andParts.size() > 1) {
             List<Condition> children = new ArrayList<>();
@@ -382,18 +382,19 @@ public class GraphRenderer {
             return new Condition() { public boolean test(double x, double tol) { return !c.test(x, tol); } };
         }
 
-        // strip outer parentheses immediately
-        if (t.startsWith("(") && t.endsWith(")")) {
+        // NOTE: only strip outer parentheses when they are *grouping* parentheses (no comma inside).
+        // This avoids removing interval delimiters like "(2,5)" before the interval parser runs.
+        if (t.startsWith("(") && t.endsWith(")") && t.indexOf(',') == -1) {
             return parseConditionExpression(t.substring(1, t.length() - 1));
         }
 
-        // quick check for interval-like syntax; we parse it manually below
+        // Interval notation: [a,b], (a,b], [a,inf), [5,infinity[, etc.
         String intervalRegex = "^([\\[\\(])\\s*([^,]+)\\s*,\\s*([^\\]\\)\\[]+)\\s*([\\]\\)\\[])$";
         if (t.matches(intervalRegex) || t.matches("^([\\[\\(])\\s*([^,]+)\\s*,\\s*([^\\]\\)]+)\\s*([\\]\\)\\[])") ) {
-            // fall through to manual parsing
+            // forgiving regex present — we'll parse more robustly below
         }
 
-        // manual interval parse: [a,b], (a,b], etc.
+        // Try manual interval parse
         if (t.length() >= 2 && (t.charAt(0) == '[' || t.charAt(0) == '(') && (t.contains(","))) {
             char left = t.charAt(0);
             char right = t.charAt(t.length() - 1);
@@ -416,15 +417,16 @@ public class GraphRenderer {
             }
         }
 
-        // x in [a,b) or x belong_to (...) style: forward to interval parser
+        // 'in' or 'belong_to' style: x in [a,b) or x belong_to (5,10]
         String inRegex = "(?i)^(x)\\s*(?:in|∈|belong_to|belongs_to|belongs to)\\s*(.+)$";
         if (t.matches(inRegex)) {
             String rhs = t.replaceFirst("(?i)^(x)\\s*(?:in|∈|belong_to|belongs_to|belongs to)\\s*", "");
             rhs = rhs.trim();
+            // If rhs is interval, reuse parse
             return parseConditionExpression(rhs);
         }
 
-        // R - {a,b} style: build an exclusion list
+        // Set exclusion like R - {5,10} or R-{5,10}
         if (t.matches("(?i)^R\\s*-\\s*\\{.*\\}$")) {
             int l = t.indexOf('{'), r = t.lastIndexOf('}');
             if (l >= 0 && r > l) {
@@ -452,7 +454,7 @@ public class GraphRenderer {
             }
         }
 
-        // x in {1,2,3} membership
+        // Set membership: x in {1,2,3}
         if (t.matches("(?i)^x\\s*(?:in|∈)\\s*\\{.*\\}$")) {
             int l = t.indexOf('{'), r = t.lastIndexOf('}');
             if (l >= 0 && r > l) {
@@ -480,8 +482,9 @@ public class GraphRenderer {
             }
         }
 
-        // chained inequalities: 0 < x < 5  -> parsed as 0 < x AND x < 5
+        // Chained inequalities like "0 < x < 5" or "0 < x <= 5"
         if (t.matches(".*[<>]=?.*\\bx\\b.*[<>]=?.*")) {
+            // make operators and tokens explicit
             String normalizedChained = t.replaceAll("([<>]=?)", " $1 ").replaceAll("\\s+", " ").trim();
             String[] parts = normalizedChained.split(" ");
             int xIndex = -1;
@@ -491,6 +494,7 @@ public class GraphRenderer {
             if (xIndex > 0) {
                 List<Condition> children = new ArrayList<>();
                 try {
+                    // left side: e.g. "0 < x" -> parts[xIndex-2] op parts[xIndex-1]
                     if (xIndex >= 2) {
                         String leftVal = parts[xIndex - 2];
                         String leftOp  = parts[xIndex - 1];
@@ -500,6 +504,7 @@ public class GraphRenderer {
                         lExpr.setVariable("pi", Math.PI).setVariable("e", Math.E);
                         children.add(new ComparisonCondition(leftOp, lExpr, rExpr));
                     }
+                    // right side: e.g. "x < 5" -> parts[xIndex+1] op parts[xIndex+2]
                     if (xIndex + 2 < parts.length) {
                         String rightOp  = parts[xIndex + 1];
                         String rightVal = parts[xIndex + 2];
@@ -510,11 +515,11 @@ public class GraphRenderer {
                         children.add(new ComparisonCondition(rightOp, lExpr, rExpr));
                     }
                     if (!children.isEmpty()) return new CompositeCondition(true, children);
-                } catch (Exception ignored) { /* fall through */ }
+                } catch (Exception ignored) { /* fall through to other handlers */ }
             }
         }
 
-        // simple comparisons (outside parentheses)
+        // Simple comparison: try to find operator outside parentheses
         String[] ops = {"<=","=","==","!=",">=","<",">"};
         for (String op : ops) {
             int pos = indexOfOp(t, op);
@@ -532,16 +537,17 @@ public class GraphRenderer {
             }
         }
 
-        // number literal -> treat as x == literal
+        // As a last resort, try to parse as single number ("x<0" style handled above) - if it's a raw number, treat as equality to x
         try {
             double v = Double.parseDouble(t);
             Expression e = new ExpressionBuilder("" + v).build();
             return new ComparisonCondition("==", new ExpressionBuilder("x").variable("x").build(), e);
         } catch (Exception ignored) {}
 
-        // unknown input: accept all (falls back to no restriction)
+        // Unknown pattern -> accept everything (safe fallback)
         return (x, tol) -> true;
     }
+
 
     // splitTopLevel: split by "and"/"or" but ignore these words if they are inside parentheses/brackets.
     // Example tricky input: "[]( ... ) [23]1[p23][]" — function tracks depth of (), {}, [] and only splits when depth==0.

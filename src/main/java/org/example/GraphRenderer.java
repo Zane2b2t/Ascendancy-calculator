@@ -10,6 +10,7 @@ import net.objecthunter.exp4j.ExpressionBuilder;
 import org.example.math.Functions;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class GraphRenderer {
@@ -232,7 +233,7 @@ public class GraphRenderer {
         }
     }
 
-    private void processExpression(String expr, List<List<double[]>> functionPoints, List<Double> verticalLines, 
+    private void processExpression(String expr, List<List<double[]>> functionPoints, List<Double> verticalLines,
                                    double w, double h, double overscan, int pxStep, double threshold) {
         // Determine if this is an explicit equation (x=..., f(x)=g(x)) only if '=' appears before any 'where'
         String[] whereSplitForEq = expr.split("(?i)\\bwhere\\b", 2);
@@ -257,10 +258,10 @@ public class GraphRenderer {
                 String baseExpr = parts[0].trim();
                 baseExpr = Functions.fixImplicitMultiplication(baseExpr);
 
-                List<Condition> conditions = new ArrayList<>();
+                Condition rootCondition = null;
                 if (parts.length == 2) {
                     String condStr = parts[1].trim();
-                    conditions = parseConditions(condStr);
+                    rootCondition = parseConditionExpression(condStr);
                 }
 
                 Expression expression = new ExpressionBuilder(baseExpr)
@@ -271,14 +272,14 @@ public class GraphRenderer {
                 for (double px = -w / 2 - overscan; px < w / 2 + overscan; px += pxStep) {
                     double x = (px - logic.getOffsetX()) / logic.getScale();
 
-                    if (!conditions.isEmpty() && !conditionsSatisfied(conditions, x)) {
+                    if (rootCondition != null && !rootCondition.test(x, 2.0 / Math.max(1.0, logic.getScale()))) {
                         continue; // skip points outside the domain restrictions
                     }
 
                     double y = expression.setVariable("x", x).evaluate();
                     if (Double.isFinite(y)) {
                         pts.add(new double[]{w / 2 + x * logic.getScale() + logic.getOffsetX(),
-                                             h / 2 - y * logic.getScale() + logic.getOffsetY(), x, y});
+                                h / 2 - y * logic.getScale() + logic.getOffsetY(), x, y});
                     }
                 }
                 if (!pts.isEmpty()) functionPoints.add(pts);
@@ -286,135 +287,258 @@ public class GraphRenderer {
         }
     }
 
+    // --- New condition system: supports comparisons, chained inequalities, interval notation, set exclusion (R - {..}), 'in'/'belong_to', and logical AND/OR/NOT (with parentheses). ---
+    private interface Condition {
+        boolean test(double x, double tol);
+    }
 
-    private static class Condition {
-        final String op; // one of <, <=, >, >=, ==, =, !=
-        final Expression left;
-        final Expression right;
-
-        Condition(String op, Expression left, Expression right) {
-            this.op = op; this.left = left; this.right = right;
-        }
-
-        boolean test(double x, double tol) {
+    private static class ComparisonCondition implements Condition {
+        final String op;
+        final Expression left, right;
+        ComparisonCondition(String op, Expression l, Expression r) { this.op = op; this.left = l; this.right = r; }
+        public boolean test(double x, double tol) {
             try {
-                double l = left.setVariable("x", x).evaluate();
-                double r = right.setVariable("x", x).evaluate();
+                double l = left.setVariable("x", x).setVariable("pi", Math.PI).setVariable("e", Math.E).evaluate();
+                double r = right.setVariable("x", x).setVariable("pi", Math.PI).setVariable("e", Math.E).evaluate();
                 return switch (op) {
                     case "<" -> l < r;
                     case "<=" -> l <= r;
                     case ">" -> l > r;
                     case ">=" -> l >= r;
-                    // Use pixel-scale tolerance so single-point exclusions are visible
                     case "!=" -> Math.abs(l - r) > tol;
                     case "==", "=" -> Math.abs(l - r) <= tol;
                     default -> true;
                 };
-            } catch (Exception e) {
+            } catch (Exception e) { return false; }
+        }
+    }
+
+    private static class IntervalCondition implements Condition {
+        final double lo, hi; final boolean loInc, hiInc;
+        IntervalCondition(double lo, boolean loInc, double hi, boolean hiInc) { this.lo = lo; this.loInc = loInc; this.hi = hi; this.hiInc = hiInc; }
+        public boolean test(double x, double tol) {
+            boolean lower = lo == Double.NEGATIVE_INFINITY ? true : (loInc ? x + tol >= lo : x > lo + tol);
+            boolean upper = hi == Double.POSITIVE_INFINITY ? true : (hiInc ? x - tol <= hi : x < hi - tol);
+            return lower && upper;
+        }
+    }
+
+    private static class SetExclusionCondition implements Condition {
+        final List<Expression> excludes;
+        SetExclusionCondition(List<Expression> excludes) { this.excludes = excludes; }
+        public boolean test(double x, double tol) {
+            for (Expression e : excludes) {
+                try { double v = e.setVariable("x", x).setVariable("pi", Math.PI).setVariable("e", Math.E).evaluate();
+                    if (Math.abs(v - x) <= tol) return false; // excluded
+                } catch (Exception ignored) {}
+            }
+            return true;
+        }
+    }
+
+    private static class CompositeCondition implements Condition {
+        final boolean isAnd; final List<Condition> children;
+        CompositeCondition(boolean isAnd, List<Condition> children) { this.isAnd = isAnd; this.children = children; }
+        public boolean test(double x, double tol) {
+            if (isAnd) {
+                for (Condition c : children) if (!c.test(x, tol)) return false;
+                return true;
+            } else {
+                for (Condition c : children) if (c.test(x, tol)) return true;
                 return false;
             }
         }
     }
 
-    private boolean conditionsSatisfied(List<Condition> conditions, double x) {
-        double tol = 2.0 / Math.max(1.0, logic.getScale()); // ~2 pixels in world units
-        for (Condition c : conditions) if (!c.test(x, tol)) return false;
-        return true;
-    }
-
-    private List<Condition> parseConditions(String condStr) {
-        String s = condStr
-                .replace('\u2264', '<')
+    private Condition parseConditionExpression(String s) {
+        if (s == null) return null;
+        String normalized = s.replace('\u2264', '<')
                 .replace('\u2265', '>')
                 .replaceAll("≤", "<=")
                 .replaceAll("≥", ">=")
                 .replaceAll("\\s+", " ")
                 .trim();
 
-        List<Condition> list = new ArrayList<>();
+        // Top-level OR split
+        List<String> orParts = splitTopLevel(normalized, "(?i)\\bor\\b");
+        if (orParts.size() > 1) {
+            List<Condition> children = new ArrayList<>();
+            for (String p : orParts) children.add(parseConditionExpression(p));
+            return new CompositeCondition(false, children);
+        }
 
-        // Split by "and" (case-insensitive)
-        String[] andParts = s.split("(?i)\\band\\b");
-        for (String raw : andParts) {
-            String c = raw.trim();
-            if (c.isEmpty()) continue;
+        // Top-level AND split
+        List<String> andParts = splitTopLevel(normalized, "(?i)\\band\\b");
+        if (andParts.size() > 1) {
+            List<Condition> children = new ArrayList<>();
+            for (String p : andParts) children.add(parseConditionExpression(p));
+            return new CompositeCondition(true, children);
+        }
 
-            // --- Handle chained inequalities like "0<x<5" or "0 < x < 5"
-            if (c.matches(".*[<>]=?.*x.*[<>]=?.*")) {
-                c = c.replaceAll("([<>]=?)", " $1 ")
-                        .replaceAll("\\s+", " ")
-                        .trim();
+        String t = normalized.trim();
+        if (t.startsWith("not ") || t.startsWith("!")) {
+            String sub = t.replaceFirst("(?i)not\\s+|!", "").trim();
+            Condition c = parseConditionExpression(sub);
+            // not A == (R - A) but easier: wrap into AND of "x in R" and exclude A
+            return new CompositeCondition(true, Arrays.asList(new Condition() { public boolean test(double x, double tol) { return !c.test(x, tol); } }));
+        }
 
-                String[] parts = c.split("\\s+");
-                int xIndex = -1;
-                for (int i = 0; i < parts.length; i++) {
-                    if (parts[i].equalsIgnoreCase("x")) { xIndex = i; break; }
+        // Parentheses
+        if (t.startsWith("(") && t.endsWith(")")) {
+            return parseConditionExpression(t.substring(1, t.length() - 1));
+        }
+
+        // Interval notation: [a,b], (a,b], [a,inf), [5,infinity[, etc.
+        String intervalRegex = "^([\\[\\(])\\s*([^,]+)\\s*,\\s*([^\\]\\)\\[]+)\\s*([\\]\\)\\[])$";
+        if (t.matches(intervalRegex) || t.matches("^([\\[\\(])\\s*([^,]+)\\s*,\\s*([^\\]\\)]+)\\s*([\\]\\)\\[])") ) {
+            // The above second pattern is forgiving; we'll do simpler matching manually
+        }
+
+        // Try manual interval parse
+        if (t.length() >= 2 && (t.charAt(0) == '[' || t.charAt(0) == '(') && (t.contains(","))) {
+            char left = t.charAt(0);
+            char right = t.charAt(t.length() - 1);
+            int comma = t.indexOf(',');
+            if (comma > 0) {
+                String leftVal = t.substring(1, comma).trim();
+                String rightVal = t.substring(comma + 1, t.length() - 1).trim();
+                double lo = parseBoundValue(leftVal, true);
+                double hi = parseBoundValue(rightVal, false);
+                boolean loInc = left == '[';
+                boolean hiInc = (right == ']'); // treat ']' as inclusive, anything else exclusive
+                return new IntervalCondition(lo, loInc, hi, hiInc);
+            }
+        }
+
+        // 'in' or 'belong_to' style: x in [a,b) or x belong_to (5,10]
+        String inRegex = "(?i)^(x)\\s*(?:in|∈|belong_to|belongs_to|belongs to)\\s*(.+)$";
+        if (t.matches(inRegex)) {
+            String rhs = t.replaceFirst("(?i)^(x)\\s*(?:in|∈|belong_to|belongs_to|belongs to)\\s*", "");
+            rhs = rhs.trim();
+            // If rhs is interval, reuse parse
+            return parseConditionExpression(rhs);
+        }
+
+        // Set exclusion like R - {5,10} or R-{5,10}
+        if (t.matches("(?i)^R\\s*-\\s*\\{.*\\}$")) {
+            int l = t.indexOf('{'), r = t.lastIndexOf('}');
+            if (l >= 0 && r > l) {
+                String inside = t.substring(l + 1, r).trim();
+                List<Expression> exps = new ArrayList<>();
+                for (String part : inside.split("\\s*,\\s*")) {
+                    try { String fixed = Functions.fixImplicitMultiplication(part);
+                        Expression e = new ExpressionBuilder(fixed).variables("x","pi","e").build();
+                        e.setVariable("pi", Math.PI).setVariable("e", Math.E);
+                        exps.add(e);
+                    } catch (Exception ignored) {}
                 }
+                return new CompositeCondition(true, Arrays.asList(new Condition[] { new Condition() { public boolean test(double x, double tol) { // start with all reals then exclude
+                    for (Expression e : exps) try { double v = e.setVariable("x", x).setVariable("pi", Math.PI).setVariable("e", Math.E).evaluate(); if (Math.abs(v - x) <= tol) return false; } catch (Exception ignored) {}
+                    return true; } } } ));
+            }
+        }
 
-                if (xIndex > 0 && xIndex < parts.length - 1) {
-                    // Left side: "0 < x"
+        // Set membership: x in {1,2,3}
+        if (t.matches(".*[<>]=?.*\\bx\\b.*[<>]=?.*")) {
+            // make operators and tokens explicit
+            normalized = t.replaceAll("([<>]=?)", " $1 ").replaceAll("\\s+", " ").trim();
+            String[] parts = normalized.split(" ");
+            int xIndex = -1;
+            for (int i = 0; i < parts.length; i++) {
+                if (parts[i].equalsIgnoreCase("x")) { xIndex = i; break; }
+            }
+            if (xIndex > 0) {
+                List<Condition> children = new ArrayList<>();
+                try {
+                    // left side: e.g. "0 < x" -> parts[xIndex-2] op parts[xIndex-1]
                     if (xIndex >= 2) {
-                        addSimpleCondition(list, parts[xIndex - 2], parts[xIndex - 1], "x");
+                        String leftVal = parts[xIndex - 2];
+                        String leftOp  = parts[xIndex - 1];
+                        Expression lExpr = new ExpressionBuilder(Functions.fixImplicitMultiplication(leftVal))
+                                .variables("x","pi","e").build();
+                        Expression rExpr = new ExpressionBuilder("x").variable("x").build();
+                        lExpr.setVariable("pi", Math.PI).setVariable("e", Math.E);
+                        children.add(new ComparisonCondition(leftOp, lExpr, rExpr));
                     }
-                    // Right side: "x < 6"
+                    // right side: e.g. "x < 5" -> parts[xIndex+1] op parts[xIndex+2]
                     if (xIndex + 2 < parts.length) {
-                        addSimpleCondition(list, "x", parts[xIndex + 1], parts[xIndex + 2]);
+                        String rightOp  = parts[xIndex + 1];
+                        String rightVal = parts[xIndex + 2];
+                        Expression lExpr = new ExpressionBuilder("x").variable("x").build();
+                        Expression rExpr = new ExpressionBuilder(Functions.fixImplicitMultiplication(rightVal))
+                                .variables("x","pi","e").build();
+                        rExpr.setVariable("pi", Math.PI).setVariable("e", Math.E);
+                        children.add(new ComparisonCondition(rightOp, lExpr, rExpr));
                     }
-                }
-
-                continue;
-            }
-
-            String[] ops = {"<=", ">=", "!=", "==", "=", "<", ">"};
-            int pos = -1;
-            String opFound = null;
-            for (String op : ops) {
-                pos = indexOfOp(c, op);
-                if (pos >= 0) {
-                    opFound = op;
-                    break;
-                }
-            }
-
-            if (opFound != null) {
-                String left = c.substring(0, pos).trim();
-                String right = c.substring(pos + opFound.length()).trim();
-
-                if (left.isEmpty()) left = "x";
-                if (right.isEmpty()) right = "x";
-
-                addSimpleCondition(list, left, opFound, right);
+                    if (!children.isEmpty()) return new CompositeCondition(true, children);
+                } catch (Exception ignored) { /* fall through to other handlers */ }
             }
         }
 
-        return list;
-    }
+        // Simple comparison: try to find operator outside parentheses
+        String[] ops = {"<=","=","==","!=",">=","<",">"};
+        for (String op : ops) {
+            int pos = indexOfOp(t, op);
+            if (pos >= 0) {
+                String left = t.substring(0, pos).trim();
+                String right = t.substring(pos + op.length()).trim();
+                if (left.isEmpty()) left = "x"; if (right.isEmpty()) right = "x";
+                try {
+                    Expression lExpr = new ExpressionBuilder(Functions.fixImplicitMultiplication(left)).variables("x","pi","e").build();
+                    Expression rExpr = new ExpressionBuilder(Functions.fixImplicitMultiplication(right)).variables("x","pi","e").build();
+                    lExpr.setVariable("pi", Math.PI).setVariable("e", Math.E);
+                    rExpr.setVariable("pi", Math.PI).setVariable("e", Math.E);
+                    return new ComparisonCondition(op, lExpr, rExpr);
+                } catch (Exception ignored) {}
+            }
+        }
 
-
-
-    private void addSimpleCondition(List<Condition> out, String left, String op, String right) {
+        // As a last resort, try to parse as single number ("x<0" style handled above) - if it's a raw number, treat as equality to x
         try {
-            String l = Functions.fixImplicitMultiplication(left);
-            String r = Functions.fixImplicitMultiplication(right);
-            Expression lExpr = new ExpressionBuilder(l).variables("x", "pi", "e").build();
-            Expression rExpr = new ExpressionBuilder(r).variables("x", "pi", "e").build();
-            lExpr.setVariable("pi", Math.PI).setVariable("e", Math.E);
-            rExpr.setVariable("pi", Math.PI).setVariable("e", Math.E);
-            out.add(new Condition(op, lExpr, rExpr));
+            double v = Double.parseDouble(t);
+            Expression e = new ExpressionBuilder("" + v).build();
+            return new ComparisonCondition("==", new ExpressionBuilder("x").variable("x").build(), e);
         } catch (Exception ignored) {}
+
+        // Unknown pattern -> accept everything (safe fallback)
+        return (x, tol) -> true;
+
     }
 
-    private int indexOf(String[] arr, int ordinalTokenIndex) {
-        return Math.min(Math.max(ordinalTokenIndex, 0), arr.length - 1);
-    }
-
-    private String join(String[] arr, int start, int end) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = start; i < end; i++) {
-            if (sb.length() > 0) sb.append(' ');
-            sb.append(arr[i]);
+    // Helper: split a string by a top-level operator regex (not inside parentheses or braces)
+    private List<String> splitTopLevel(String s, String operatorRegex) {
+        List<String> out = new ArrayList<>();
+        int depth = 0; int last = 0;
+        String lower = s;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '(' || c == '{' || c == '[') depth++;
+            else if (c == ')' || c == '}' || c == ']') depth = Math.max(0, depth - 1);
+            if (depth == 0) {
+                // try to match operator at position i
+                // we'll just check word boundaries for "and"/"or" by simple substring compare
+                // find next space-delimited token
+                // simplistic but effective for common cases
+                // check for " or " and " and " ignoring case
+                if (s.regionMatches(true, i, " or ", 0, 4) && operatorRegex.equals("(?i)\\bor\\b")) {
+                    out.add(s.substring(last, i).trim()); last = i + 4; i += 3; continue;
+                }
+                if (s.regionMatches(true, i, " and ", 0, 5) && operatorRegex.equals("(?i)\\band\\b")) {
+                    out.add(s.substring(last, i).trim()); last = i + 5; i += 4; continue;
+                }
+            }
         }
-        return sb.toString();
+        if (last == 0) { out.add(s.trim()); return out; }
+        out.add(s.substring(last).trim()); return out;
+    }
+
+    private double parseBoundValue(String s, boolean allowNegInf) {
+        s = s.trim();
+        if (s.equalsIgnoreCase("infinity") || s.equalsIgnoreCase("inf") || s.equals("∞")) return Double.POSITIVE_INFINITY;
+        if (s.equalsIgnoreCase("-infinity") || s.equalsIgnoreCase("-inf")) return Double.NEGATIVE_INFINITY;
+        try { return Double.parseDouble(s); } catch (Exception e) {
+            try { Expression ex = new ExpressionBuilder(Functions.fixImplicitMultiplication(s)).variables("x","pi","e").build(); ex.setVariable("pi", Math.PI).setVariable("e", Math.E); return ex.evaluate(); } catch (Exception ex2) { return allowNegInf ? Double.NEGATIVE_INFINITY : Double.POSITIVE_INFINITY; }
+        }
     }
 
     private int indexOfOp(String s, String op) {
@@ -453,9 +577,9 @@ public class GraphRenderer {
 
     private double[] toScreen(double worldX, double worldY, double w, double h) {
         return new double[]{
-            w / 2 + worldX * logic.getScale() + logic.getOffsetX(),
-            h / 2 - worldY * logic.getScale() + logic.getOffsetY(),
-            worldX, worldY
+                w / 2 + worldX * logic.getScale() + logic.getOffsetX(),
+                h / 2 - worldY * logic.getScale() + logic.getOffsetY(),
+                worldX, worldY
         };
     }
 

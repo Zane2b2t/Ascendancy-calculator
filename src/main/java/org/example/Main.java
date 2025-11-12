@@ -8,6 +8,7 @@ import org.example.ai.GeminiAI;
 import org.example.math.Functions;
 import org.example.math.SystemSolver;
 import org.example.math.Algorthims;
+import org.example.physics.FDTDVisualizer;
 
 public class Main {
 
@@ -49,6 +50,13 @@ public class Main {
                 String key = scanner.nextLine().trim();
                 GeminiAI.saveApiKey(key);
                 System.out.println("API key saved.");
+                continue;
+            }
+
+            // FDTD EM Wave Visualizer
+            if (input.equalsIgnoreCase("fdtd") || input.equalsIgnoreCase("radar")) {
+                System.out.println("Launching FDTD EM Wave Visualizer...");
+                launchFDTDVisualizer();
                 continue;
             }
 
@@ -126,6 +134,16 @@ public class Main {
         }
         scanner.close();
         System.out.println("Program exited.");
+    }
+
+    private static void launchFDTDVisualizer() {
+        new Thread(() -> {
+            try {
+                javafx.application.Application.launch(FDTDVisualizer.class);
+            } catch (Exception e) {
+                System.out.println("Error launching FDTD Visualizer: " + e.getMessage());
+            }
+        }).start();
     }
 
     private static void handleFunctionMenu(Scanner scanner, String func) {

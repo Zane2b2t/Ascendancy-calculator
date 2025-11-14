@@ -209,6 +209,10 @@ public class FDTDSimulation {
      * Rasterize a list of visualizer SimObjects into per-cell epsilon/sigma/isObjectMask.
      * Must be called whenever simObjects in the visualizer change.
      */
+    /**
+     * Rasterize a list of visualizer SimObjects into per-cell epsilon/sigma/isObjectMask.
+     * Must be called whenever simObjects in the visualizer change.
+     */
     public void rasterizeMaterials(List<FDTDVisualizer.SimObject> objects) {
         resetMaterials();
 
@@ -223,13 +227,18 @@ public class FDTDSimulation {
                 case "Metal Sphere":
                 case "Metal Box":
                 case "Corner Reflector":
-                    cond = 1e5;
+                    cond = 1e5; // almost perfect conductor
                     break;
                 case "Dielectric Sphere":
                     epsR = 2.0 + obj.conductivity * 8.0;
                     break;
                 case "Absorber":
                     cond = obj.conductivity * 5.0;
+                    break;
+                case "Stealth Wedge":
+                case "RAM Layer":
+                case "Corner Deflector":
+                    // Handled per-cell below
                     break;
                 default:
                     break;
@@ -245,8 +254,9 @@ public class FDTDSimulation {
 
             for (int i = minI; i <= maxI; i++) {
                 for (int j = minJ; j <= maxJ; j++) {
-                    // For spheres/ellipses: simple distance test
+
                     boolean inside = false;
+
                     switch (obj.type) {
                         case "Metal Sphere":
                         case "Dielectric Sphere":
@@ -256,17 +266,59 @@ public class FDTDSimulation {
                             double radius = Math.max(obj.sizeX, obj.sizeY) / 2.0;
                             inside = (rx * rx + ry * ry) <= (radius * radius);
                             break;
+
                         case "Metal Box":
                             inside = true; // box bounding box already aligned
                             break;
+
                         case "Corner Reflector":
-                            // approximate L-shape: two bars from (x,y) along +x and +y
                             int relx = i - obj.x + halfW;
                             int rely = j - obj.y + halfH;
                             int thickness = Math.max(1, Math.min(obj.sizeX, obj.sizeY) / 5);
                             boolean hor = (rely >= 0 && rely < thickness && relx >= 0 && relx <= obj.sizeX);
                             boolean ver = (relx >= 0 && relx < thickness && rely >= 0 && rely <= obj.sizeY);
                             inside = hor || ver;
+                            break;
+
+                        case "Stealth Wedge":
+                            // Tapered wedge with gradual absorption
+                            int startY = obj.y - obj.sizeY / 2;
+                            int endY = obj.y + obj.sizeY / 2;
+                            if (j >= startY && j <= endY) {
+                                double rel = (j - startY) / (double)obj.sizeY; // 0->1
+                                int rowWidth = (int)((1 - rel) * obj.sizeX);
+                                if (i >= obj.x - rowWidth / 2 && i <= obj.x + rowWidth / 2) {
+                                    inside = true;
+                                    cond = obj.conductivity * rel * 10.0;
+                                    epsR = 1.0;
+                                }
+                            }
+                            break;
+
+                        case "RAM Layer":
+                            // Thin absorber layer, gradually increasing conductivity
+                            int layerStartY = obj.y - obj.sizeY / 2;
+                            int layerEndY = obj.y + obj.sizeY / 2;
+                            if (j >= layerStartY && j <= layerEndY) {
+                                inside = true;
+                                double rel = (j - layerStartY) / (double)obj.sizeY;
+                                cond = obj.conductivity * rel * 15.0; // gradually stronger absorption
+                                epsR = 1.0;
+                            }
+                            break;
+
+                        case "Corner Deflector":
+                            // L-shaped ramp to deflect waves
+                            int dx = i - obj.x + halfW;
+                            int dy = j - obj.y + halfH;
+                            int rampThickness = Math.max(1, Math.min(obj.sizeX, obj.sizeY) / 4);
+                            boolean horRamp = dx >= 0 && dx < obj.sizeX && dy >= 0 && dy < rampThickness;
+                            boolean verRamp = dy >= 0 && dy < obj.sizeY && dx >= 0 && dx < rampThickness;
+                            if (horRamp || verRamp) {
+                                inside = true;
+                                cond = obj.conductivity * 5.0;
+                                epsR = 1.0;
+                            }
                             break;
                     }
 
@@ -279,6 +331,7 @@ public class FDTDSimulation {
             }
         }
     }
+
 
     // Used by visualizer to draw object overlays
     public boolean isObject(int i, int j) {

@@ -187,8 +187,12 @@ public class FDTDVisualizer extends Application {
                 "Metal Box",
                 "Dielectric Sphere",
                 "Absorber",
-                "Corner Reflector"
+                "Corner Reflector",
+                "Wedge",
+                "Stealth Wedge",
+                "RAM Layer"
         );
+
         objectTypeCombo.setValue("Metal Sphere");
 
         Label condLabel = new Label("Conductivity: Medium");

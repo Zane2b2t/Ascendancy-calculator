@@ -2,6 +2,7 @@ package org.example;
 
 import java.util.Scanner;
 
+import javafx.application.Application;
 import net.objecthunter.exp4j.Expression;
 import net.objecthunter.exp4j.ExpressionBuilder;
 import org.example.ai.GeminiAI;
@@ -9,7 +10,7 @@ import org.example.math.Functions;
 import org.example.math.SystemSolver;
 import org.example.math.Algorthims;
 import org.example.physics.FDTDVisualizer;
-
+import org.example.physics.RCSSimulator3D;
 public class Main {
 
     public static void main(String[] args) throws Exception {
@@ -57,6 +58,12 @@ public class Main {
             if (input.equalsIgnoreCase("fdtd") || input.equalsIgnoreCase("radar")) {
                 System.out.println("Launching FDTD EM Wave Visualizer...");
                 launchFDTDVisualizer();
+                continue;
+            }
+// Launch RCS Simulator
+            if (input.equalsIgnoreCase("rcs")) {
+                System.out.println("Launching 3D RCS Simulator...");
+                launchRCSSimulator();
                 continue;
             }
 
@@ -134,6 +141,15 @@ public class Main {
         }
         scanner.close();
         System.out.println("Program exited.");
+    }
+    private static void launchRCSSimulator() {
+        new Thread(() -> {
+            try {
+                Application.launch(RCSSimulator3D.class);
+            } catch (Exception e) {
+                System.out.println("Error launching RCS Simulator: " + e.getMessage());
+            }
+        }).start();
     }
 
     private static void launchFDTDVisualizer() {
